@@ -1,0 +1,19 @@
+{
+  "name": "haloflux-for-codex",
+  "version": "0.3.2-beta.1",
+  "type": "module",
+  "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check:protocol": "node scripts/check-protocol.mjs",
+    "check:source": "node scripts/check-source.mjs",
+    "diagnose:sandbox": "node scripts/diagnose-windows-sandbox.mjs",
+    "test:soak": "node --expose-gc scripts/soak.mjs",
+    "test:edge": "node scripts/edge-regression.mjs",
+    "test:live": "node scripts/smoke-live.mjs",
+    "test:live:approvals": "node scripts/smoke-approvals.mjs"
+  }
+}

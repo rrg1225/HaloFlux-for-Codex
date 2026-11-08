@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="haloflux-token" content="__BRIDGE_TOKEN__">
+  <title>HaloFlux for Codex</title>
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"><i></i></div>
+        <div><p class="eyebrow">LOCAL CODEX VISUALIZER / __VERSION__</p><h1>HaloFlux <span>for Codex</span></h1></div>
+      </div>
+      <div class="mast-actions">
+        <span class="connection"><i></i><span id="connection">正在连接本地桥接</span></span>
+        <a href="/original" target="_blank" rel="noreferrer">原版演示 ↗</a>
+      </div>
+    </header>
+
+    <main>
+      <div class="modebar">
+        <div class="tabs" aria-label="可视化来源">
+          <button type="button" id="demo-mode" aria-pressed="true">模拟演练</button>
+          <button type="button" id="live-mode" aria-pressed="false">实时 Codex</button>
+        </div>
+        <span class="eyebrow mode-note" id="mode-note">SIMULATED SIGNAL · 本地模拟</span>
+      </div>
+
+      <div class="grid">
+        <section class="visual" aria-label="HaloFlux 状态画布" data-state="idle">
+          <iframe title="HaloFlux 光环画布" id="renderer" allow="fullscreen"></iframe>
+          <div class="visual-tag"><span>01 / HALO FIELD</span><span>CANVAS / 2D</span></div>
+          <output id="performance" class="visual-performance" aria-label="渲染性能">等待采样</output>
+          <div class="visual-status">
+            <div class="eyebrow"><i></i> <span id="state-code">IDLE</span></div>
+            <strong id="state-label" aria-live="polite">待机</strong>
+            <span id="activity-label">等待活动</span>
+          </div>
+        </section>
+
+        <aside class="control">
+          <div class="section-title"><span class="index">02</span><h2>任务控制</h2></div>
+          <section id="demo-controls">
+            <p>播放完整流程，或验证审批与失败如何改变画布。</p>
+            <div class="actions">
+              <button class="primary" type="button" data-scenario="success">播放示例</button>
+              <button type="button" data-scenario="approval">模拟审批</button>
+              <button type="button" data-scenario="failure">模拟失败</button>
+            </div>
+          </section>
+          <section id="live-controls" hidden>
+            <div class="actions">
+              <button class="primary" id="connect" type="button">连接 Codex</button>
+              <button id="new-thread" type="button">新建线程</button>
+            </div>
+            <p class="thread-status">当前线程 <code id="current-thread">未选择</code></p>
+            <details id="thread-picker">
+              <summary>浏览已有线程</summary>
+              <ul id="thread-list" aria-label="已有线程"></ul>
+              <button id="more-threads" type="button" hidden>加载更多</button>
+            </details>
+            <form id="resume-form" class="resume">
+              <label for="thread-id">已有线程 ID</label>
+              <div><input id="thread-id" type="text" maxlength="128" autocomplete="off" spellcheck="false" required placeholder="粘贴线程 ID"><button id="resume" type="submit">恢复</button></div>
+            </form>
+            <form id="run-form">
+              <label for="prompt">给 Codex 的任务</label>
+              <textarea id="prompt" rows="3" maxlength="12000" autocomplete="off" required placeholder="输入任务。内容仅提交给本地 Codex。"></textarea>
+              <button id="run" class="primary" type="submit">运行任务</button>
+            </form>
+          </section>
+          <section id="approval" class="approval" aria-live="polite" hidden>
+            <h3>等待人工处理</h3>
+            <p id="approval-count"></p>
+            <details id="approval-review">
+              <summary>查看请求并决定</summary>
+              <div id="approval-list"></div>
+            </details>
+          </section>
+          <div class="actions task-actions">
+            <button id="interrupt" type="button" disabled>中断任务</button>
+            <span id="result">尚无结果</span>
+          </div>
+          <p id="error" role="status" class="error" hidden></p>
+          <p id="failure-hint" role="status" class="error" hidden></p>
+        </aside>
+
+        <section class="activity panel">
+          <div class="section-title"><span class="index">03</span><h2>活动信号</h2><span class="eyebrow end">TURN TELEMETRY</span></div>
+          <dl class="metrics">
+            <div><dt>命令</dt><dd id="count-command">00</dd></div>
+            <div><dt>文件变更</dt><dd id="count-file">00</dd></div>
+            <div><dt>其他工具</dt><dd id="count-tool">00</dd></div>
+            <div><dt>消息</dt><dd id="count-message">00</dd></div>
+          </dl>
+          <ol id="activity-log" aria-label="最近活动"><li>等待首个信号</li></ol>
+          <details id="task-detail">
+            <summary>任务详情与执行时间线</summary>
+            <p id="detail-status"></p>
+            <div id="detail-content" hidden>
+              <h3>用户输入</h3><pre id="detail-prompt"></pre>
+              <h3>Codex 回复</h3><pre id="detail-reply"></pre>
+              <p id="detail-error" class="error" hidden></p>
+              <details id="timeline-panel">
+                <summary>执行时间线</summary>
+                <ol id="timeline"></ol>
+              </details>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel settings">
+          <div class="section-title"><span class="index">04</span><h2>渲染设置</h2></div>
+          <label>旋转速度 <input type="range" id="spin" min=".15" max="1.5" step=".05" value="1"></label>
+          <label>光照强度 <input type="range" id="light" min=".2" max="1.5" step=".05" value="1"></label>
+          <label>光束强度 <input type="range" id="beams" min=".1" max="1.7" step=".05" value="1"></label>
+          <label>粒子密度 <input type="range" id="particles" min=".15" max="1.3" step=".05" value="1"></label>
+          <label>节拍速度 <input type="range" id="rhythm" min=".25" max="1.5" step=".05" value="1"></label>
+          <label>画布配色 <select id="color"><option value="state">跟随状态</option><option value="native">原版</option><option value="cyan">青色</option><option value="violet">紫色</option><option value="amber">琥珀色</option></select></label>
+          <label>渲染上限 <select id="fps"><option value="60">60 FPS</option><option value="30">30 FPS</option><option value="20">20 FPS</option></select></label>
+          <label>光环缩放 <input type="range" id="zoom" min=".55" max="2" step=".05" value="1"></label>
+          <label>构图 <select id="composition"><option value="fit">完整主体</option><option value="crop">原版艺术裁切</option></select></label>
+          <label>光环 X <input type="range" id="haloX" min="-45" max="45" step="1" value="0"></label>
+          <label>光环 Y <input type="range" id="haloY" min="-45" max="45" step="1" value="0"></label>
+          <label>画布比例 <input type="range" id="ratio" min="55" max="79" step="1" value="72"></label>
+          <label>文字大小 <input type="range" id="readability" min="90" max="130" step="5" value="100"></label>
+          <label>跟随窗口 <input id="follow" type="checkbox" checked></label>
+          <label>自动质量 <input id="autoQuality" type="checkbox" checked></label>
+          <label>低性能模式 <input id="low" type="checkbox" aria-describedby="low-note"></label>
+          <small id="low-note">降低画布像素与粒子密度，绘制上限为 20 FPS。</small>
+        </section>
+
+        <section class="panel">
+          <div class="section-title"><span class="index">05</span><h2>环境健康检查</h2></div>
+          <details id="health-panel">
+            <summary>查看本机状态</summary>
+            <p id="health-status" role="status"></p>
+            <dl id="health-list"></dl>
+            <div class="actions">
+              <button type="button" id="health-refresh">重新检查</button>
+              <button type="button" id="health-export" disabled>导出脱敏诊断报告</button>
+            </div>
+          </details>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div>原作 <a href="https://github.com/Ryder191/haloflux" target="_blank" rel="noreferrer">Ryder191 · RYDER CODE / Ms MAIKEBAIs CAT</a><br>Codex 适配与新增功能 · Li Xian（李显）</div>
+      <div>非官方 · 仅限非商业用途 · <a href="/LICENSE">许可证</a> · <a href="/NOTICE.md">署名</a></div>
+    </footer>
+  </div>
+</body>
+</html>

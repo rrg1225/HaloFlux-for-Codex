@@ -1,0 +1,39 @@
+name: Windows checks
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: windows-2025
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax, dependency, license, original files and secret patterns
+        run: npm.cmd run check:source
+      - name: Unit and mock protocol tests
+        run: npm.cmd test
+      - name: Local bridge soak
+        run: npm.cmd run test:soak
+      - name: Build and verify reproducible archive
+        shell: powershell
+        run: |
+          .\scripts\release-windows.ps1
+          $archive = Get-Item -LiteralPath "dist\HaloFlux-for-Codex-v$((Get-Content -Raw package.json | ConvertFrom-Json).version)-windows.zip"
+          $expected = (Get-FileHash -LiteralPath $archive.FullName).Hash
+          .\scripts\release-windows.ps1
+          if ((Get-FileHash -LiteralPath $archive.FullName).Hash -ne $expected) { throw 'ZIP is not reproducible.' }
+          $target = Join-Path $env:RUNNER_TEMP 'HaloFlux 安装 test'
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $target
+          Push-Location -LiteralPath $target
+          try {
+            npm.cmd test
+            if ($LASTEXITCODE -ne 0) { throw 'Extracted package tests failed.' }
+          } finally { Pop-Location }
