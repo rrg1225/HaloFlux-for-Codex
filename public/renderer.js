@@ -39,6 +39,8 @@
   drawAdv = drawDiff = drawVal = drawIdx = agentsTick = drawCallout = () => {};
 
   window.haloFluxDpr = dpr => Math.min(dpr, settings.low ? .85 : tiers[quality]);
+  // Composed browser scaling can report 1.0000000298 at DPR 1.
+  const dprChanged = previous => Math.abs(window.haloFluxDpr(devicePixelRatio) - previous) >= 1e-6;
   window.haloFluxScheduleFrame = () => {
     if (frameId === null && !document.hidden) {
       frameId = requestAnimationFrame(now => {
@@ -108,7 +110,7 @@
             quality = Math.max(0, quality - 1);
             healthy = 0;
           }
-          if (quality !== previous && window.haloFluxDpr(devicePixelRatio) !== previousDpr) rebuild();
+          if (quality !== previous && dprChanged(previousDpr)) rebuild();
         }
         samples = [];
         sampledMs = 0;
@@ -184,7 +186,7 @@
     const geometryChanged = ['zoom', 'haloX', 'haloY', 'composition'].some(key => settings[key] !== next[key]);
     if (!next.autoQuality) quality = 0;
     settings = next;
-    if (geometryChanged || window.haloFluxDpr(devicePixelRatio) !== previousDpr) rebuild();
+    if (geometryChanged || dprChanged(previousDpr)) rebuild();
     const hue = Object.hasOwn(colors, settings.color) ? colors[settings.color] : target[6];
     if (hue !== previousHue) {
       stage.style.setProperty('--halo-filter', hue ? 'sepia(.48) saturate(1.5) hue-rotate(' + hue + ')' : 'none');

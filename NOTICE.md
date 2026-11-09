@@ -12,7 +12,7 @@ Required Notice: Noncommercial use only. Any commercial use is strictly prohibit
 
 Codex integration and additional development by Li Xian（李显）.
 
-HaloFlux for Codex additions through v0.3.0-beta.1 include the local App Server bridge, approval review, task controls, rendering adaptations, diagnostics, tests, CI, and Windows launcher. This is an unofficial, noncommercial derivative. Original source notices and the upstream license accompany the release.
+HaloFlux for Codex additions include the local App Server bridge, approval review, task controls, rendering adaptations, diagnostics, tests, CI, and Windows launcher. This is an unofficial, noncommercial derivative. Original source notices and the upstream license accompany the release.
 
 Copyright (c) 2026 Li Xian（李显）, limited to the Codex integration, associated original additions, and modifications. The distribution is under the [PolyForm Noncommercial License 1.0.0](LICENSE). Keep the original license, attribution, and Required Notice lines with redistributed copies.
 

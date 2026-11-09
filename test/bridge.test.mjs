@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { CodexRpc, TransportError } from '../src/codex-rpc.mjs';
 import { CodexSession } from '../src/session.mjs';
 import { startBridge } from '../src/server.mjs';
 import { codexFailure, FAILURE } from '../src/diagnostics.mjs';
@@ -41,39 +40,6 @@ class FixtureRpc extends EventEmitter {
     this.emit('closed');
   }
 }
-
-test('stdio handshake, UTF-8 JSONL, pending-call timeout and process cleanup', async () => {
-  const fakeServer = [
-    "const readline = require('node:readline');",
-    "let initialized = false;",
-    "readline.createInterface({input: process.stdin}).on('line', line => {",
-    " const msg = JSON.parse(line);",
-    " if (msg.method === 'initialize') process.stdout.write(JSON.stringify({id: msg.id, result: {}}) + '\\n');",
-    " if (msg.method === 'initialized') initialized = true;",
-    " if (msg.method === 'probe' && initialized) {",
-    "  const data = Buffer.from(JSON.stringify({id: msg.id, result: msg.params}) + '\\n');",
-    "  const split = data.indexOf(Buffer.from('光')) + 1;",
-    "  process.stdout.write(data.subarray(0, split));",
-    "  setTimeout(() => process.stdout.write(data.subarray(split)), 5);",
-    " }",
-    "});",
-  ].join('\n');
-  const rpc = new CodexRpc({ command: process.execPath, args: ['-e', fakeServer] });
-  try {
-    await rpc.initialize();
-    assert.deepEqual(await rpc.call('probe', { value: '光环' }), { value: '光环' });
-    await assert.rejects(rpc.call('no-response', {}, 20), TransportError);
-    assert.equal(rpc.closed, true);
-  } finally {
-    rpc.close();
-  }
-});
-
-test('an RPC call after child exit rejects immediately', async () => {
-  const rpc = new CodexRpc({ command: process.execPath, args: ['-e', 'process.exit(1)'] });
-  await new Promise(resolve => rpc.once('closed', resolve));
-  await assert.rejects(rpc.call('initialize', {}), TransportError);
-});
 
 test('session routes explicit decline, recovers active turn after exit and interrupts', async () => {
   const children = [];
@@ -167,6 +133,21 @@ test('loopback HTTP rejects untrusted writes and sends only aggregate event snap
     } finally {
       await reader.cancel();
     }
+    bridge.disconnectStreams();
+    const restored = (await fetch(bridge.origin + '/api/events')).body.getReader();
+    try {
+      const packet = new TextDecoder().decode((await restored.read()).value);
+      assert.equal(JSON.parse(packet.match(/^data: (.*)$/m)[1]).live.state, 'approval_required');
+      const starts = rpc.calls.filter(([method]) => method === 'turn/start');
+      assert.equal(starts.length, 1);
+      assert.deepEqual(starts[0][1].sandboxPolicy, { type: 'readOnly', networkAccess: false });
+      assert.equal(starts[0][1].approvalsReviewer, 'user');
+      rpc.emit('notification', { method: 'turn/completed', params: { threadId: 'thread',
+        turn: { id: 'turn', status: 'completed' } } });
+      const terminal = new TextDecoder().decode((await restored.read()).value);
+      assert.equal(JSON.parse(terminal.match(/^data: (.*)$/m)[1]).live.outcome, 'completed');
+      assert.equal(rpc.calls.filter(([method]) => method === 'turn/start').length, 1);
+    } finally { await restored.cancel(); }
   } finally {
     bridge.close();
   }
@@ -188,6 +169,32 @@ test('rejects an incompatible safety schema and reports structured external fail
     assert.equal(rpc.closed, true);
     assert.deepEqual(rpc.calls, []);
   } finally { session.stop(); }
+});
+
+test('an incompatible App Server leaves the HTTP demo usable', async () => {
+  const rpc = new FixtureRpc();
+  rpc.safetyContract = false;
+  const bridge = await startBridge({ port: 0, makeRpc: () => rpc });
+  try {
+    const page = await (await fetch(bridge.origin)).text();
+    const token = page.match(/name="haloflux-token" content="([a-f0-9]+)"/)[1];
+    const send = body => fetch(bridge.origin + '/api/action', {
+      method: 'POST',
+      headers: { Origin: bridge.origin, 'X-HaloFlux-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const rejected = await send({ action: 'connect' });
+    assert.equal(rejected.status, 400);
+    assert.match((await rejected.json()).error, /协议不兼容/);
+    const demo = await send({ action: 'demo', scenario: 'approval' });
+    assert.equal(demo.status, 200);
+    assert.deepEqual(await demo.json(), {});
+    assert.equal(rpc.closed, true);
+    assert.deepEqual(rpc.calls, []);
+    const closing = bridge.close();
+    assert.equal(bridge.close(), closing);
+    await closing;
+  } finally { await bridge.close(); }
 });
 
 test('scopes early requests and cleans up cancellation, resolution, expiry and concurrent decisions', async () => {

@@ -90,10 +90,12 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
   const streams = new Set();
   let revision = 0;
   let broadcast;
+  let closing;
+  const shutdown = new AbortController();
   const envelope = () => ({ revision, live: live.snapshot, demo: demo.snapshot });
   const publish = () => {
     revision++;
-    if (broadcast) return;
+    if (broadcast || shutdown.signal.aborted) return;
     // A burst of JSONL notifications can describe one visible state. The private
     // timeline still records each event, while SSE sends only the latest snapshot.
     broadcast = setImmediate(() => {
@@ -106,12 +108,13 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
     });
   };
   const live = new CodexSession({ cwd, publish: () => { if (streams.size) publish(); }, makeRpc, clock });
-  const healthCheck = createHealthCheck(resolveCodex, live);
+  const healthCheck = createHealthCheck(resolveCodex, live, shutdown.signal);
   const demo = new Demo(() => { if (streams.size) publish(); });
   let origin;
   let activeActions = 0;
   const server = createServer({ requestTimeout: 15000, headersTimeout: 10000, connectionsCheckingInterval: 5000 },
     async (request, response) => {
+    if (shutdown.signal.aborted) return json(response, 503, { error: '桥接正在关闭。' });
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'no-referrer');
@@ -162,6 +165,7 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
       activeActions++;
       try {
         const body = await readAction(request);
+        if (shutdown.signal.aborted) return json(response, 503, { error: '桥接正在关闭。' });
         if (body.action === 'health') {
           json(response, 200, await healthCheck());
         } else if (body.action === 'demo') {
@@ -202,14 +206,20 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
       json(response, 404, { error: '未找到资源。' });
     }
   });
-  await new Promise((accept, reject) => {
-    server.once('error', reject);
-    server.listen(port, LOOPBACK, () => {
-      origin = 'http://' + LOOPBACK + ':' + server.address().port;
-      server.off('error', reject);
-      accept();
+  try {
+    await new Promise((accept, reject) => {
+      server.once('error', reject);
+      server.listen(port, LOOPBACK, () => {
+        origin = 'http://' + LOOPBACK + ':' + server.address().port;
+        server.off('error', reject);
+        accept();
+      });
     });
-  });
+  } catch (error) {
+    live.stop();
+    demo.stop();
+    throw error;
+  }
   const heartbeat = setInterval(() => {
     for (const stream of streams) {
       if (stream.writableLength > 64 * 1024) stream.destroy();
@@ -222,32 +232,45 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
     get streamCount() { return streams.size; },
     disconnectStreams,
     close() {
-      live.stop();
+      if (closing) return closing;
+      const httpClosed = new Promise(resolve => server.close(resolve));
+      shutdown.abort();
       demo.stop();
       clearInterval(heartbeat);
       clearImmediate(broadcast);
       disconnectStreams();
-      server.close();
-      server.closeAllConnections();
+      // Give SSE an EOF and bound the drain of stalled requests on existing sockets.
+      const deadline = setTimeout(() => server.closeAllConnections(), 1000).unref();
+      closing = Promise.all([httpClosed, live.stop()]).finally(() => clearTimeout(deadline));
+      return closing;
     },
   };
 }
 
-export async function startLocal(workspace = process.cwd()) {
+export async function startLocal(workspace = process.cwd(), { onStop } = {}) {
   const cwd = await realpath(workspace);
   if (!(await stat(cwd)).isDirectory()) throw new Error('Invalid workspace directory.');
   const port = Number(process.env.HALOFLUX_PORT ?? 4637);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port.');
   const bridge = await startBridge({ cwd, port });
   console.log('HaloFlux for Codex  ' + bridge.origin);
-  process.once('SIGINT', () => bridge.close());
-  process.once('SIGTERM', () => bridge.close());
-  return bridge;
+  const signals = process.platform === 'win32' ? ['SIGINT', 'SIGTERM', 'SIGBREAK'] : ['SIGINT', 'SIGTERM'];
+  let stopping;
+  const stop = () => {
+    if (stopping) return stopping;
+    stopping = bridge.close().finally(() => {
+      for (const signal of signals) process.off(signal, stop);
+    });
+    onStop?.();
+    return stopping;
+  };
+  for (const signal of signals) process.on(signal, stop);
+  return Object.assign(bridge, { stop });
 }
 
 export function startupError(error) {
   return error.code === 'EADDRINUSE'
-    ? 'HaloFlux port is in use. Set HALOFLUX_PORT to a different port.'
+    ? 'HaloFlux port is in use. If HaloFlux is already running, use its existing window. Set HALOFLUX_PORT for a separate instance.'
     : 'HaloFlux could not start. Check the workspace directory, port, and project files.';
 }
 

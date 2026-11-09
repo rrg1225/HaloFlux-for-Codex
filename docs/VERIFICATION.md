@@ -1,55 +1,37 @@
-# HaloFlux for Codex v0.3.2-beta.1 验收
+# HaloFlux for Codex v0.3.3-rc.1 验收
 
-2026-11-08（UTC+8）。Windows 11 家庭版 25H2，10.0.26200.7462，Node.js 24.13.0，Edge 156.0.4314.58，Playwright 1.65.0-alpha-2026-10-30。CPU 为 Core i7-14650HX，系统枚举 Intel UHD 32.0.101.7077 和 RTX 5060 Laptop 32.0.15.9636。Edge trace 使用 Intel UHD Direct3D11。
+2026-11-09（UTC+8），本地 Windows 11。运行时为 Node.js 22.13.1 和 24.13.0，本轮浏览器为 Edge 157.0.4341.42。1080p 配对使用 11 月 8 日的 Edge 156 记录。 [v0.3.2 历史验收](VERIFICATION-v0.3.2.md) · [v0.3.1 历史验收](VERIFICATION-v0.3.1.md) · [v0.2 历史验收](VERIFICATION-v0.2.md)
 
-## Stage 0
+## 中断恢复
 
-工作区无 Git 元数据，提交为 N/A。修改前创建独立快照 `%TEMP%/haloflux-v031-frozen-15ade5b3-39a4-438a-8655-d37b2a16b147`，包含当时工作区和历史发布物。冻结源码的 62 个发布条目与 v0.3.1 ZIP 逐项字节相同。v0.3.1 ZIP SHA-256 仍为 `4d5ecaab967c8230b88bc95f6fc7a9bd64acd7c8efb8b8951e5a58e508306cab`，保留原校验文件。原样 13 项离线测试、来源校验和本机 CLI Schema 检查均通过。 [v0.3.1 冻结验收](VERIFICATION-v0.3.1.md) · [v0.2 历史验收](VERIFICATION-v0.2.md)
+恢复时 `main` 只有导入提交 `65a2ac9` 和 `v0.3.2-beta.1` 标签。31 个已跟踪文件有修改，另有 12 个未跟踪文件。原修改在原工作区继续完成。备份清单的 174 个文件重新通过 SHA-256，v0.3.2 ZIP 的 65 个条目逐一与导入前备份一致。基线保留了源文件，Git 导入时泛化历史沙箱报告的本机路径并增加仓库控制文件。恢复时已有 1080p A/B、双标签驻留和多次关停探针，`dist` 保存的是历史版本 ZIP。
 
-本机当前 App Server 来自 npm Codex CLI 0.162.0。用原生二进制运行 `app-server generate-json-schema --experimental`。主要生成文件的 SHA-256 如下。CLI 路径、发布来源、二进制签名和其他版本静态比较见兼容性报告。 [Windows CLI 兼容性](SANDBOX.md)
+## 关停与兼容性
 
-| Schema | SHA-256 |
-| --- | --- |
-| `codex_app_server_protocol.v2.schemas.json` | `5c0ee37a723e4672108aa5c68b0c63cd540e17d408ca2f8ac1e7ebf76e737ac2` |
-| `ClientRequest.json` | `f1425525dae2903cb5b658ee412530ff7a8fcaf78887f182c169b299e7f6b09b` |
-| `ServerRequest.json` | `3d7bc481f84dc042984a74420e65c5a8d3c423f37a91b7d5df2365c903a12ac6` |
-| `ServerNotification.json` | `071ecc89ba71ce215e1ac01f6e05be509eafa533b2ba6fac43f4c05330305a83` |
+早期报告记录了残留 Node 的活动管道。接手续测已带上既有的输入流销毁修复，Ctrl+Break 后 Node、监听与 App Server 均已退出。探针仍在等待 CMD 的原生批处理确认。输入 `Y` 后外壳退出，其非零退出码独立于桥接关停结果。
 
-## Gate 记录
+统一关停入口会拒绝新操作并结束打开的 SSE，取消诊断和 Schema 探针，清理计时器与信号监听器。对本次启动的 App Server 先送 stdin EOF，等待进程与 stdio 关闭，必要时只终止该子进程。进程验收在启动时核对 PID、父 PID、创建时间、映像路径和命令行，报告仅保留脱敏类型。活动模拟和异常退出另用夹具覆盖。 [Windows 使用说明](WINDOWS.md)
 
-| Gate | 状态 | 证据 |
+实际 CLI Schema 核对请求方法、参数引用、人工审查和禁网字段，并在临时 `CODEX_HOME` 发送 `initialize` 与 `initialized`。安装的 0.162.0 经默认 PATH 解析和显式中文空格路径均通过，模型调用为零。夹具覆盖安全字段缺失或错误关联、未知字段、握手错误、异常退出和实时模式降级后模拟仍可用。 [官方 App Server 协议](https://learn.chatgpt.com/docs/app-server) · [兼容状态和候选计划](SANDBOX.md)
+
+## 发布验收
+
+| 项目 | 状态 | 证据 |
 | --- | --- | --- |
-| 0 离线回归 | VERIFIED / MOCK VERIFIED | 13 项通过。包括生产 HTTP/SSE 与 JSONL、鉴权和脱敏、线程轮次作用域、重复决定及过期、恢复和故障分类。 |
-| 1 Windows 沙箱 | UPSTREAM_BLOCKED / BLOCKED_BY_APPROVAL | 0.162.0 在冻结基线四次复现 Error 32。0.163.0 已核对官方资产、修复提交及标签 Schema，下载、验签和运行均待授权。 |
-| 2 双标签 | MOCK VERIFIED | 单页有头冒烟通过。五次严格长测连续通过，每轮 12 次刷新、24 次切换和 120 秒停留，退出后无观测到的残留。独立 Edge 确认原生隐藏页仍可接收审批状态，回前台恢复 rAF 和绘制。历史两次超时未重现。 [分段测试和超时证据](DUAL-TAB.md) |
-| 3 性能 | VERIFIED（测量） / FAILED（目标） | 1080p / DPR 1 有头 Edge，固定、自动、静态各版本五窗，共 30 窗和两条独立 trace。固定档 46.03 → 44.38 FPS，自动档 50.62 → 51.17 FPS，候选一窗 49.41 FPS。 [A/B 与管线证据](PERFORMANCE.md) |
-| 4 协议 | VERIFIED（0.162.0） / BLOCKED_BY_APPROVAL（0.163.0 实机） | 默认与显式 `CODEX_BIN` 通过当前二进制 Schema 检查，错误的绝对路径被拒绝。解压副本完成当前 CLI 的无模型握手。 |
-| 5 Windows 诊断包 | VERIFIED | 两次构建字节一致。逐项校验发布清单、11 个原版 SHA-256、许可证及 Required Notice，敏感模式扫描通过。带中文与空格的路径解压后通过 13 项离线测试、Schema 检查、页面与 SSE、0.162.0 无模型握手。Ctrl+C 后桥接监听和已观察到的子进程关闭。 |
+| 基线与发行内容 | VERIFIED | 原备份、旧 ZIP、11 个原版文件哈希、原 LICENSE、Required Notice 和新增署名核验通过。发布允许列表含 78 个条目，构建逐项核对压缩内容并扫描凭据模式和本机路径。 |
+| 离线测试 | VERIFIED / MOCK VERIFIED | Node 22、24 各 23 项通过。真实回环 HTTP/SSE、鉴权、生产 JSONL、进程退出和 DPR 阈值经过测试。Codex 请求、审批和模拟数据使用夹具。两轮 8 秒 Node 压测关闭后夹具进程均为零，时间线最多 200 条。 |
+| Windows 解压和关停 | VERIFIED | 在中文和空格目录解压，检查页面、模拟模式、CLI 缺失及无效路径提示、占用端口提示。连续五轮以 0.162.0 完成无模型握手，保持 SSE 打开后退出。每轮均核验 EOF、本次子进程归零和端口重新绑定。三轮用 `Q`，另两轮发出 Ctrl+C 或 Ctrl+Break 后确认 CMD 提示。 |
+| 可重建 ZIP | VERIFIED | 两次独立构建比较 ZIP 字节的 SHA-256 和同名侧车。原 v0.3.2 ZIP 保留。 [构建和校验](WINDOWS.md) |
+| Edge 浏览器与 Canvas | VERIFIED / MOCK VERIFIED | 有头冒烟、双标签 12 次刷新与 24 次切换、SSE 重连、后台恢复、DPR 阈值和真实比例切换。原生后台探针前两次遇到标签可见性或恢复超时，使用独立测试窗口后通过。保留已有 1080p 对照，补齐 1366 × 768、2560 × 1440 及触摸移动视口 DPR 3。 [性能数据和原始记录](PERFORMANCE.md) |
+| 稳定性能提升 | FAILED | 1080p 自动档消除五次同尺寸重建，P99 从 68.9 降至 37.2 ms。固定档首窗对顺序敏感，移动自动档 P99 本轮上升 13.0 ms。短窗支持功能防回归，稳定收益和统计等效均未证实。 [配对数据](PERFORMANCE.md) |
+| 0.162.0 普通 Windows 沙箱 | UPSTREAM_BLOCKED | 沿用此前原生 CLI 与 App Server 的 Error 32 实机证据。此次握手不涉及沙箱执行，也未再次触发 runtime 的 ACL 刷新。 [历史诊断](SANDBOX.md) |
+| 0.163.0 候选二进制 | BLOCKED_BY_APPROVAL | 静态记录保留，下载、验签和实机运行待授权。 |
+| 其余环境 | NOT TESTED | 真实模型轮次、真实审批和真实任务关停，Windows 强制终止与外部 SIGTERM 实机、默认浏览器关联、GitHub Actions 远程运行、物理触屏与长期 GPU 内存趋势。 |
 
-本轮真实模型、真实文件及命令审批、Node 22、实体触屏、远程 CI 和跨设备测试为 NOT TESTED。v0.2 已有的真实审批证据单独保留。模型冒烟入口默认返回 NOT_TESTED，需另外启用。
-
-Node 长测为 MOCK VERIFIED。120.097 秒内 916 轮、91 次 SSE 重连、654 次并发决定争用、46 次夹具进程启动。关闭后夹具进程为零，时间线最大 200 项。回收后堆首窗约 10.37 MiB，最后六窗约 12.18–12.25 MiB，退出后约 11.95 MiB。工作区证据为 `output/soak-node-v032.json`。
-
-打包预检中，非交互控制台未答复批处理的 `Terminate batch job (Y/N)?`，一轮关停等待超时。之后使用独立终端发送 Ctrl+C，核对服务和子进程退出，并回答批处理提示。解压启动证据保存在 `output/launcher-v032.json`。
-
-## 复测命令
-
-```powershell
-npm.cmd test
-npm.cmd run check:source
-npm.cmd run check:protocol
-$env:HALOFLUX_SOAK_MS = '120000'
-npm.cmd run test:soak
-$env:HALOFLUX_PLAYWRIGHT = 'C:/path/to/playwright/index.mjs'
-$env:HALOFLUX_EDGE_HEADED = '1'
-$env:HALOFLUX_EDGE_REPEATS = '5'
-npm.cmd run test:edge
-node scripts/edge-background.mjs
-powershell.exe -NoProfile -File scripts/release-windows.ps1
-```
-
-常规测试使用模拟或测试夹具。无模型 App Server 握手与真实沙箱命令分别验收。沙箱诊断的固定回显见兼容性报告，执行前核对当前 Windows 权限边界。 [兼容性实验方案](SANDBOX.md)
+工作区证据包括 `output/recovery-baseline-integrity.json`、`output/recovery-node-*.log`、`output/recovery-soak-*.json`、`output/recovery-shutdown-*.json` 及 `output/playwright/v033/recovery-*`。这些运行记录留在工作区，发行 ZIP 使用固定文件清单。
 
 ## v0.4.0 准入
 
-当前仅交付 Windows 诊断版。v0.4.0 准入未通过。尚需取得候选二进制实机兼容和普通只读沙箱执行证据。固定档提升和自动档稳定高于 50 FPS 的目标也未达成。
+- **应用工程**。本地浏览器版有可回退基线、可重建候选包、进程关停和离线回归。真实任务、审批和中断仍需在可用的沙箱环境验收。
+- **Windows 上游环境**。0.162.0 协议兼容已确认，普通沙箱仍受历史 Error 32 阻塞。0.163.0 实机结果待授权。
+- **桌面架构**。现有浏览器和 Windows 启动器作为可运行基线。Electron、Tauri 的桌面能力、分发与运行成本留在 ADR 比较，正式桌面壳准入暂缓。 [桌面化架构决策](DESKTOP-ADR.md)

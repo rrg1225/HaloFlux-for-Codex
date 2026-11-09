@@ -9,6 +9,8 @@ export const FAILURE = Object.freeze({
   application: 'APPLICATION_BUG',
   sandbox: 'CODEX_SANDBOX_FAILURE',
   protocol: 'CODEX_PROTOCOL_ERROR',
+  cliMissing: 'CODEX_CLI_NOT_FOUND',
+  cliPath: 'CODEX_CLI_PATH_INVALID',
   auth: 'AUTHENTICATION_ERROR',
   environment: 'UNKNOWN_ENVIRONMENT_ERROR',
 });
@@ -17,6 +19,8 @@ export const FAILURE_HINTS = Object.freeze({
   [FAILURE.application]: '本地桥接处理失败。导出诊断报告以便复现。',
   [FAILURE.sandbox]: 'Codex 沙箱运行失败。可继续模拟演练；检查 Windows 沙箱日志与 Codex 安装。',
   [FAILURE.protocol]: 'Codex 协议不兼容或响应无效。运行 npm run check:protocol 核对本机版本。',
+  [FAILURE.cliMissing]: '找不到 Codex CLI。安装官方 CLI 后重新启动，或继续使用模拟模式。',
+  [FAILURE.cliPath]: 'CODEX_BIN 无效。请指定本机原生可执行文件的绝对路径。',
   [FAILURE.auth]: 'Codex 身份验证失败。请在本机检查 codex login status。',
   [FAILURE.environment]: 'Codex 运行环境不可用。检查 CLI、登录状态和本地连接。',
 });
@@ -36,7 +40,38 @@ export function codexFailure({ code, codexErrorInfo, message } = {}) {
   return FAILURE.environment;
 }
 
-export function createHealthCheck(resolveCodex, live) {
+export async function cliVersion(binary, env = process.env, signal) {
+  const { stdout } = await execute(binary, ['--version'], { ...cliOptions, env, signal });
+  const version = /^codex-cli (\d+\.\d+\.\d+(?:[-.][a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?)$/i.exec(stdout.trim())?.[1];
+  if (!version) throw new Error('Unexpected Codex version output.');
+  return version;
+}
+
+const cliOptions = { windowsHide: true, timeout: 5000, maxBuffer: 32 * 1024 };
+
+export async function inspectCli(resolveCodex, signal) {
+  const cli = { status: 'failed', evidence: 'unusable' };
+  const login = { status: 'unchecked' };
+  let binary;
+  try {
+    binary = resolveCodex();
+    Object.assign(cli, { status: 'ok', version: await cliVersion(binary, process.env, signal), evidence: 'detected' });
+  } catch (error) {
+    if (error.category === FAILURE.cliMissing) cli.evidence = 'missing';
+    if (error.category === FAILURE.cliPath) cli.evidence = 'invalid-path';
+    return { cli, login };
+  }
+  if (signal?.aborted) return { cli, login };
+  try {
+    await execute(binary, ['login', 'status'], { ...cliOptions, signal });
+    login.status = 'ok';
+  } catch (error) {
+    login.status = /\bnot logged in\b/i.test(`${error.stdout} ${error.stderr}`) ? 'failed' : 'warning';
+  }
+  return { cli, login };
+}
+
+export function createHealthCheck(resolveCodex, live, signal) {
   let cached, checkedAt = 0;
   const checkSandboxMarker = async () => {
     if (process.platform !== 'win32') return false;
@@ -51,22 +86,7 @@ export function createHealthCheck(resolveCodex, live) {
     } catch { return false; }
   };
   const checkCli = async () => {
-    const cli = { status: 'failed' };
-    const login = { status: 'unchecked' };
-    const options = { windowsHide: true, timeout: 5000, maxBuffer: 32 * 1024 };
-    try {
-      const binary = resolveCodex();
-      const { stdout } = await execute(binary, ['--version'], options);
-      const version = /^codex-cli (\d+\.\d+\.\d+(?:[-.][a-z0-9.-]+)?)\s*$/i.exec(stdout.trim())?.[1];
-      if (!version) return { cli, login };
-      Object.assign(cli, { status: 'ok', version });
-      try {
-        await execute(binary, ['login', 'status'], options);
-        login.status = 'ok';
-      } catch (error) {
-        login.status = /\bnot logged in\b/i.test(error.stdout + ' ' + error.stderr) ? 'failed' : 'warning';
-      }
-    } catch { /* Only allowlisted status and version leave this function. */ }
+    const { cli, login } = await inspectCli(resolveCodex, signal);
     return { cli, login, sandboxMarker: cli.status === 'ok' && await checkSandboxMarker() };
   };
   return async () => {

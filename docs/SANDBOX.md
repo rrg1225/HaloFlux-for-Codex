@@ -1,5 +1,11 @@
 # Windows 沙箱兼容性
 
+## v0.3.3-rc.1 当前结果
+
+本机默认 CLI 仍是 0.162.0。`npm.cmd run check:protocol` 通过本机生成的 Schema。`npm.cmd run check:cli` 在空的临时 `CODEX_HOME` 验证相同版本的 `initialize` / `initialized` 握手，返回核心兼容、完整审批响应能力和零模型用量。协议检查采用已安装的二进制。 [OpenAI 官方 App Server 文档](https://learn.chatgpt.com/docs/app-server)
+
+实时连接会显示 CLI 缺失、路径无效和协议失败。健康面板区分 CLI 登录状态、握手、已有沙箱失败标记、浏览器事件流和本地桥接。沙箱运行结果仍依据上一次实机的 Error 32 证据列为 **UPSTREAM_BLOCKED**，本轮没有重复触发 sandbox runtime 的 ACL 初始化。候选 0.163.0 下载、验签及执行为 **BLOCKED_BY_APPROVAL**。0.162.0 本轮模型与真实审批为 **NOT TESTED**。 [上游修复](https://github.com/openai/codex/pull/51822) · [相关问题](https://github.com/openai/codex/issues/52488)
+
 ## v0.3.2-beta.1 实机与静态对照
 
 2026-11-08（UTC+8），本机默认解析仍为 npm Codex CLI 0.162.0。由 `<npm-global-bin>/codex.cmd` 对应的 npm 安装定位到 `<npm-global-bin>/node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe`。同发行包的 helper 位于其上一级的 `codex-resources`。
@@ -31,7 +37,7 @@
 3. 在允许的权限边界内，用相同账户和相同沙箱策略执行两种版本的原生只读回显及 App Server `command/exec` 只读禁网回显。只读命令本身仅输出固定标记。Windows sandbox runtime 初始化可能写本机状态和 ACL，若需要提权、ACL 或系统配置改动，先停在该阶段并取得专项授权。保持现有 Codex 进程和系统安全保护。记录确切退出码、回显、脱敏错误特征和子进程关闭。独立配置无法复现现有 runtime 条件时，将隔离结果和真实共享冲突复测分开记录。模型用量为零。
 4. 回退时关闭专用测试进程及 PowerShell 会话，保留脱敏证据并清理该临时目录。复核默认 CLI 解析及已验证版本。真实模型和审批需额外授权。
 
-当前已有基于 Schema 的能力检查和显式 `CODEX_BIN` 选择。0.163.0 实机结果是扩展兼容层的前置条件，本轮继续使用既有启动机制。 [启动说明](WINDOWS.md) · [官方 App Server 协议](https://learn.chatgpt.com/docs/app-server)
+候选可执行文件验签并获授权后，在专用 PowerShell 会话中设置 `CODEX_BIN`，用 `npm.cmd run check:cli` 执行隔离握手。关闭该会话即可恢复默认解析。0.163.0 实机结果仍待验证。 [启动说明](WINDOWS.md) · [官方 App Server 协议](https://learn.chatgpt.com/docs/app-server)
 
 ## v0.3.1-beta.1 本机结果（冻结历史）
 

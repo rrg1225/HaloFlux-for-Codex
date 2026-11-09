@@ -136,8 +136,19 @@
 
         <section class="panel">
           <div class="section-title"><span class="index">05</span><h2>环境健康检查</h2></div>
+          <details>
+            <summary>首次使用</summary>
+            <ol>
+              <li>先用模拟模式熟悉画布、任务状态和审批。模拟模式无需 Codex CLI 或账户。</li>
+              <li>实时模式需要本机 Codex CLI。使用终端执行 <code>codex login</code>，再点击连接。HaloFlux 通过本机 App Server 发起任务。</li>
+              <li>启动目录是 Codex 的工作范围。浏览器只连接本机回环地址，实时模型请求由 Codex 发出。</li>
+              <li>实时任务默认使用只读沙箱。查看命令、目录或补丁后，再提交当前请求允许的一次性决定。</li>
+              <li>Windows 沙箱初始化失败时，可导出脱敏状态并继续使用模拟模式。</li>
+            </ol>
+          </details>
           <details id="health-panel">
             <summary>查看本机状态</summary>
+            <p id="health-connection"></p>
             <p id="health-status" role="status"></p>
             <dl id="health-list"></dl>
             <div class="actions">

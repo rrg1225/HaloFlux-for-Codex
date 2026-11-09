@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 const { HALOFLUX_PLAYWRIGHT, HALOFLUX_PERF_CASES, HALOFLUX_PERF_MODES,
-  HALOFLUX_PERF_OUTPUT, HALOFLUX_PERF_TRACE, HALOFLUX_PERF_SCREENSHOTS } = process.env;
+  HALOFLUX_PERF_OUTPUT, HALOFLUX_PERF_TRACE, HALOFLUX_PERF_SCREENSHOTS, HALOFLUX_PERF_GATE,
+  HALOFLUX_PERF_VIEWPORT, HALOFLUX_PERF_REPEATS } = process.env;
 assert.ok(HALOFLUX_PLAYWRIGHT, 'Set HALOFLUX_PLAYWRIGHT to playwright/index.mjs.');
 const { chromium } = await import(pathToFileURL(resolve(HALOFLUX_PLAYWRIGHT)));
 const roots = process.argv.slice(2);
@@ -19,10 +20,17 @@ assert.ok(cases.every(name => ['fixed', 'auto', 'static', 'original', 'detail', 
 assert.ok(modes.every(mode => ['headless', 'headed'].includes(mode)));
 const output = resolve(HALOFLUX_PERF_OUTPUT || 'output/playwright/edge-matrix.json');
 const duration = 6000;
-const repeats = 5;
-// Edge can expose 1.0000000298 after composing its native scale and CDP's
-// deviceScaleFactor=1. Permit floating point rounding, then check actual pixels.
-const isDprOne = dpr => Math.abs(dpr - 1) < 1e-6;
+const repeats = Number(HALOFLUX_PERF_REPEATS ?? 5);
+assert.ok(Number.isInteger(repeats) && repeats > 0, 'Invalid repeat count.');
+const dimensions = /^(\d+)x(\d+)@(\d+(?:\.\d+)?)(-mobile)?$/.exec(HALOFLUX_PERF_VIEWPORT ?? '1920x1080@1');
+assert.ok(dimensions, 'Use WIDTHxHEIGHT@DPR or WIDTHxHEIGHT@DPR-mobile.');
+const [, width, height, scale, mobile] = dimensions;
+const view = { width: Number(width), height: Number(height) };
+const deviceScaleFactor = Number(scale);
+const isMobile = Boolean(mobile);
+assert.ok(view.width && view.height && deviceScaleFactor);
+// Edge can compose its native scale and CDP's deviceScaleFactor with tiny rounding.
+const nearDpr = (actual, expected) => Math.abs(actual - expected) < 1e-6;
 const bridges = [];
 const rows = [];
 const invalidRows = [];
@@ -32,7 +40,17 @@ function sample({ duration, scenario }) {
   const original = { frame, drawStage, resizeStage, updateBeat, updateCam, updateOuter, updateRing };
   const timestamps = { raf: [], rafClock: [], draw: [], stage: [], update: [], longTasks: [] };
   const detail = scenario === 'detail';
-  let active = false, invalid = false, rebuilds = 0, updateMs = 0, skipped = 0;
+  let active = false, invalid = false, qualitySwitches = 0, updateMs = 0, skipped = 0;
+  const resizeEvents = [];
+  const nativeDpr = window.haloFluxDpr;
+  let lastTier = nativeDpr?.(2);
+  if (nativeDpr) window.haloFluxDpr = function (dpr) {
+    // The tier ceiling can change before it affects an actual DPR-1 backing store.
+    const tier = nativeDpr(2);
+    if (active && tier !== lastTier) qualitySwitches++;
+    lastTier = tier;
+    return nativeDpr(dpr);
+  };
   let initialBacking;
   const visibilityChanged = () => { if (active) invalid = true; };
   document.addEventListener('visibilitychange', visibilityChanged);
@@ -44,8 +62,9 @@ function sample({ duration, scenario }) {
     original.frame(now);
   };
   resizeStage = function () {
-    if (active) rebuilds++;
+    const before = active && [stage.width, stage.height];
     original.resizeStage();
+    if (before) resizeEvents.push({ before, after: [stage.width, stage.height], dpr: DPR });
   };
   drawStage = function (dt) {
     const start = performance.now();
@@ -88,6 +107,7 @@ function sample({ duration, scenario }) {
       longTasks?.disconnect();
       document.removeEventListener('visibilitychange', visibilityChanged);
       ({ frame, drawStage, resizeStage, updateBeat, updateCam, updateOuter, updateRing } = original);
+      if (nativeDpr) window.haloFluxDpr = nativeDpr;
       const intervals = times => times.slice(1).map((time, i) => time - times[i]);
       const stats = values => {
         const sorted = values.slice().sort((a, b) => a - b);
@@ -104,7 +124,7 @@ function sample({ duration, scenario }) {
         raf: stats(intervals(timestamps.raf)), rafClock: stats(intervals(timestamps.rafClock)),
         draw: scenario === 'static' ? null : stats(intervals(timestamps.draw)),
         stage: scenario === 'static' ? null : stats(timestamps.stage),
-        update: detail ? stats(timestamps.update) : null, rebuilds, initialBacking,
+        update: detail ? stats(timestamps.update) : null, rebuilds: resizeEvents.length, resizeEvents, qualitySwitches, initialBacking,
         backing: [stage.width, stage.height], dpr: DPR, pageDpr: devicePixelRatio,
         longTasks: longTasks ? timestamps.longTasks.filter(([time]) => time >= start && time < end) : null,
         timestamps });
@@ -156,7 +176,7 @@ try {
         for (let offset = 0; offset < bridges.length; offset++) {
           const { version, bridge } = bridges[(repeat + offset) % bridges.length];
           if (scenario === 'original' && version !== bridges[0].version) continue;
-          const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+          const context = await browser.newContext({ viewport: view, deviceScaleFactor, isMobile, hasTouch: isMobile });
           try {
             const page = await context.newPage();
             await page.bringToFront();
@@ -171,9 +191,9 @@ try {
               await page.locator('#low').uncheck();
               await page.locator('#fps').selectOption('60');
               await page.evaluate(() => window.scrollTo(0, 0));
-              target = page.frames().find(child => /\/canvas-desktop$/.test(child.url()));
+              target = page.frames().find(child => child.url().endsWith(isMobile ? '/canvas-mobile' : '/canvas-desktop'));
             }
-            assert.ok(target, 'Desktop canvas frame was not loaded.');
+            assert.ok(target, 'Requested canvas frame was not loaded.');
             await target.waitForFunction(() => typeof started !== 'undefined' && started && ready);
             await target.evaluate(scenario => {
               if (scenario === 'no-css') stage.style.setProperty('filter', 'none', 'important');
@@ -200,7 +220,8 @@ try {
             const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight,
               screen: [screen.width, screen.height], dpr: devicePixelRatio, visibility: document.visibilityState,
               focused: document.hasFocus() }));
-            if (!result.valid || !isDprOne(viewport.dpr) || viewport.width !== 1920 || viewport.height !== 1080) {
+            if (!result.valid || !nearDpr(viewport.dpr, deviceScaleFactor) ||
+              viewport.width !== view.width || viewport.height !== view.height) {
               const invalid = { mode, scenario, version, repeat, viewport, visibility: result.visibility,
                 visibilityInvalid: result.visibilityInvalid, durationMs: result.durationMs, drawCount: result.timestamps.draw.length };
               invalidRows.push(invalid);
@@ -208,17 +229,17 @@ try {
               throw new Error('Invalid benchmark window: ' + JSON.stringify(invalid));
             }
             if (['fixed', 'quality-toggle'].includes(scenario)) {
-              assert.ok(isDprOne(result.dpr), 'Unexpected backing DPR for a fixed-quality sample.');
+              assert.ok(nearDpr(result.dpr, Math.min(deviceScaleFactor, 1.5)), 'Unexpected backing DPR for a fixed-quality sample.');
               assert.deepEqual(result.backing, result.initialBacking);
             }
             rows.push({ mode, scenario, version, repeat, viewport, ...result });
             await writeFile(output, JSON.stringify({ duration, repeats, environment, rows, invalidRows }));
             console.log(mode, scenario, version, repeat + 1, result.fps?.toFixed(2) ?? 'static',
               'rAF p95', result.raf.p95?.toFixed(1), 'longtasks', result.longTasks?.length, 'rebuilds', result.rebuilds);
-            if (HALOFLUX_PERF_SCREENSHOTS === '1' && scenario === 'fixed' && repeat === 4) {
+            if (HALOFLUX_PERF_SCREENSHOTS === '1' && scenario === 'fixed' && repeat === repeats - 1) {
               await page.screenshot({ path: join(dirname(output), `edge-${version}-${mode}-fixed.png`) });
             }
-            if (HALOFLUX_PERF_TRACE === '1' && scenario === 'fixed' && repeat === 4) {
+            if (HALOFLUX_PERF_TRACE === '1' && scenario === 'fixed' && repeat === repeats - 1) {
               await trace(context, page, target, join(dirname(output), `edge-trace-${version}-${mode}`));
             }
           } finally { await context.close(); }
@@ -227,5 +248,19 @@ try {
     } finally { await browser.close(); }
   }
 } finally {
-  for (const { bridge } of bridges) bridge.close();
+  await Promise.all(bridges.map(({ bridge }) => bridge.close()));
+}
+
+if (HALOFLUX_PERF_GATE === '1') {
+  const version = bridges.at(-1).version;
+  for (const scenario of cases.filter(name => ['fixed', 'auto', 'quality-toggle'].includes(name))) {
+    const headed = rows.filter(row => row.version === version && row.mode === 'headed' && row.scenario === scenario);
+    assert.equal(headed.length, repeats, 'Missing headed samples for ' + scenario);
+    for (const row of headed) {
+      assert.ok(row.viewport.focused && row.draw.max < 1000, 'Unfocused or frozen Canvas: ' + scenario);
+      if (scenario !== 'auto') assert.equal(row.rebuilds, 0, 'Unexpected Canvas rebuild: ' + scenario);
+      for (const { before, after } of row.resizeEvents) assert.notDeepEqual(before, after, 'Duplicate Canvas backing rebuild');
+    }
+  }
+  console.log(version + ' | Headed Canvas response and rebuild assertions verified.');
 }

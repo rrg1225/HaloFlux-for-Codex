@@ -1,6 +1,6 @@
 {
   "name": "haloflux-for-codex",
-  "version": "0.3.2-beta.1",
+  "version": "0.3.3-rc.1",
   "type": "module",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -8,11 +8,19 @@
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs",
+    "test:unit": "node --test test/adapter.test.mjs test/diagnostics.test.mjs test/renderer.test.mjs",
+    "test:protocol": "node --test test/protocol.test.mjs",
+    "test:integration": "node --test test/bridge.test.mjs",
+    "test:security": "node --test test/security.test.mjs",
     "check:protocol": "node scripts/check-protocol.mjs",
+    "check:cli": "node scripts/check-cli.mjs",
     "check:source": "node scripts/check-source.mjs",
     "diagnose:sandbox": "node scripts/diagnose-windows-sandbox.mjs",
     "test:soak": "node --expose-gc scripts/soak.mjs",
     "test:edge": "node scripts/edge-regression.mjs",
+    "test:edge:background": "node scripts/edge-background.mjs",
+    "test:performance": "node scripts/edge-matrix.mjs",
+    "test:windows": "powershell.exe -NoProfile -File scripts/test-windows.ps1",
     "test:live": "node scripts/smoke-live.mjs",
     "test:live:approvals": "node scripts/smoke-approvals.mjs"
   }

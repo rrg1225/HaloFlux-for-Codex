@@ -18,4 +18,7 @@ auth.json
 *.trace
 *.trace.json
 *.trace.json.gz
+*.har
+*.etl
+*.jsonl
 *.tmp

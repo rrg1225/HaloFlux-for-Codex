@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { CodexRpc } from '../src/codex-rpc.mjs';
 import { startBridge } from '../src/server.mjs';
+import { fixtureSchema } from '../test/fixtures/protocol-schema.mjs';
 
 const duration = Number(process.env.HALOFLUX_SOAK_MS ?? 8000);
 assert.ok(Number.isSafeInteger(duration) && duration >= 3000 && duration <= 3600000);
@@ -11,12 +12,14 @@ const fixture = String.raw`
 const readline = require('node:readline');
 const send = msg => console.log(JSON.stringify(msg));
 const note = (method, params) => send({ method, params });
-let turn, sequence = 0;
+let turn, sequence = 0, initialized = false;
 const end = status => { note('turn/completed', { ...turn, turn: { id: turn.turnId, status } }); turn = null; };
 readline.createInterface({ input: process.stdin }).on('line', line => {
   const msg = JSON.parse(line), { method, id, params } = msg;
   const reply = result => send({ id, result });
-  if (method === 'initialized') return;
+  if (method === 'initialize') return reply({ userAgent: 'fixture/1' });
+  if (method === 'initialized') { initialized = true; return; }
+  if (!initialized) throw new Error('Missing initialized notification.');
   if (method === 'thread/resume' || method === 'thread/start') {
     return reply({ thread: { id: params.threadId ?? 'thread-new', status: { type: 'idle' } } });
   }
@@ -46,14 +49,9 @@ const children = new Set();
 let starts = 0;
 let now = Date.now();
 const bridge = await startBridge({ port: 0, clock: () => now, makeRpc() {
-  const rpc = new CodexRpc({ command: process.execPath, args: ['-e', fixture, String(++starts)] });
+  const rpc = new CodexRpc({ command: process.execPath, args: ['-e', fixture, String(++starts)], readSchema: fixtureSchema() });
   children.add(rpc);
   rpc.child.once('close', () => children.delete(rpc));
-  rpc.approvalContract = { input: true, permissions: true, elicitation: true };
-  rpc.initialize = async () => {
-    await rpc.call('initialize', {});
-    rpc.send({ method: 'initialized' });
-  };
   return rpc;
 } });
 const token = (await (await fetch(bridge.origin)).text()).match(/name="haloflux-token" content="([a-f0-9]+)"/)[1];

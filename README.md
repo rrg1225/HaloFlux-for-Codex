@@ -1,8 +1,10 @@
-# HaloFlux for Codex v0.3.2-beta.1
+# HaloFlux for Codex v0.3.3-rc.1
 
 Original HALOFLUX by Ryder191 (RYDER CODE / Ms MAIKEBAIs CAT). [原始仓库](https://github.com/Ryder191/haloflux)
 
 Codex integration and additional development by Li Xian（李显）.
+
+HaloFlux for Codex is an unofficial, non-commercial project. [English guide](#english-guide)
 
 HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目。它通过本机 Codex App Server 执行任务，用原版 Canvas 展示状态。使用和分发须遵守原始 PolyForm Noncommercial License 1.0.0 及 Required Notice。 [许可证](LICENSE) · [署名](NOTICE.md)
 
@@ -10,11 +12,11 @@ HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目
 
 解压 Windows ZIP，安装 Node.js 22 或更新版本，再双击 `Start-HaloFlux.cmd`。启动器会检查运行环境并打开默认浏览器。实时模式还需要安装 Codex CLI 并登录。启动器检测不到 CLI 或登录时，仍可进入模拟模式。项目无第三方运行时依赖。
 
-开发者可在项目目录运行 `npm.cmd start`，访问 [本地界面](http://127.0.0.1:4637)。按 `Ctrl+C` 停止服务。自定义工作目录、端口和 CLI 路径见 [Windows 使用说明](docs/WINDOWS.md)。
+启动器中输入 `Q` 并回车即可关闭桥接。开发者可在项目目录运行 `npm.cmd start`，访问本地地址 `http://127.0.0.1:4637`，按 `Ctrl+C` 停止服务。自定义工作目录、端口和 CLI 路径见 [Windows 使用说明](docs/WINDOWS.md)。
 
-本包为诊断版。现有 npm Codex CLI 0.162.0 通过 App Server 协议检查。上一版在本机的原生 CLI 与 App Server 均复现了 Windows 沙箱 Error 32。官方候选 0.163.0 已完成发布元数据与标签 Schema 核对，下载、验签及执行等待单独授权。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
+本包为 Windows 发布候选版。npm Codex CLI 0.162.0 通过本版 Schema 检查与隔离握手。该 CLI 在此前的本机实测中遇到 Windows 沙箱 Error 32。0.163.0 仅完成官方发布元数据与标签 Schema 核对，实机验证待授权。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
 
-有头 Edge 回归分别检查 SSE 建连、刷新、模式切换、并发模拟审批、可见性和绘制恢复。1080p 对照中，候选固定档平均 44.38 FPS，自动档平均 51.17 FPS。自动档仍有一个窗口低于 50 FPS。 [双标签排查](docs/DUAL-TAB.md) · [性能对照](docs/PERFORMANCE.md)
+有头 Edge 回归分别检查 SSE 建连、刷新、模式切换、并发模拟审批、可见性和绘制恢复。各版本 1080p 固定档与自动档的实测数据、质量切换及帧间隔见性能报告。 [双标签排查](docs/DUAL-TAB.md) · [性能对照](docs/PERFORMANCE.md)
 
 ## 使用界面
 
@@ -27,7 +29,7 @@ HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目
 
 以下截图由 Edge 实际渲染，内容为本地模拟。
 
-![桌面画布和任务面板](docs/screenshots/desktop.png)
+![v0.3.3-rc.1 桌面画布和任务面板](docs/screenshots/v033-desktop.png)
 
 [平板布局](docs/screenshots/tablet.png) · [模拟审批卡](docs/screenshots/simulated-approval.png)
 
@@ -37,13 +39,28 @@ HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目
 npm.cmd test
 npm.cmd run check:source
 npm.cmd run check:protocol
-npm.cmd run test:soak
-npm.cmd run diagnose:sandbox
+npm.cmd run check:cli
+npm.cmd run test:windows
 ```
 
-以上命令无需模型调用。沙箱诊断使用固定的本机只读探针，分别报告握手与执行结果。未验证执行时返回非零退出码。真实模型测试单独由 `HALOFLUX_LIVE_TEST=1` 启用，使用已登录的 Codex 和独立临时目录。 [验收记录](docs/VERIFICATION.md) · [性能复测](docs/PERFORMANCE.md)
+以上命令无需模型调用。Windows 沙箱诊断是单独运行的固定本机只读探针，可能触发 Codex runtime 初始化。真实模型测试由 `HALOFLUX_LIVE_TEST=1` 显式启用，使用已登录的 Codex 和独立临时目录。 [测试矩阵](docs/TESTING.md) · [验收记录](docs/VERIFICATION.md)
 
 [架构说明](docs/ARCHITECTURE.md) · [更新日志](CHANGELOG.md)
+
+## English guide
+
+HaloFlux visualizes Codex task state with the original HALOFLUX Canvas. The local bridge streams status and counts to the browser. Open the task details or approval panel to inspect private content on demand. [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md)
+
+1. Verify the ZIP against its SHA-256 file. Extract it to a writable Windows folder and install Node.js 22 or newer.
+2. Open `Start-HaloFlux.cmd` to start the bridge and launch your default browser. Type `Q` and press Enter in the launcher to stop it. From a terminal, `npm.cmd start` also serves the UI at `http://127.0.0.1:4637` and stops with Ctrl+C.
+3. Use **模拟演练** (Demo) to try success, failure or an approval without a Codex account. For **实时 Codex** (Live), install the official CLI, sign in through `codex login` and select **连接 Codex** (Connect). Create, list or resume a thread, then run or interrupt a task.
+4. In **查看请求并决定** (Review and decide), inspect the scoped command, permissions or patch. Choose a one-time decision offered for that request. Refresh restores the pending state, and a used or outdated approval ticket is rejected.
+
+**The browser did not open.** Copy the loopback URL from the launcher. If the port is occupied, reuse the existing HaloFlux window or set `HALOFLUX_PORT` for a separate instance. The extracted folder is the default workspace. Pass a directory to `npm.cmd start -- "path to workspace"` to select another one. [Windows guide](docs/WINDOWS.md)
+
+**Live tasks fail to start.** Check the health panel and `codex login status`. `npm.cmd run check:protocol` and `npm.cmd run check:cli` check the selected CLI without model use. The 0.162.0 CLI passed schema and handshake checks. A prior local run reproduced Windows sandbox Error 32. The 0.163.0 candidate awaits an authorized runtime check. Demo mode works independently. [Compatibility report](docs/SANDBOX.md)
+
+Original HALOFLUX and its visual design are by Ryder191 (RYDER CODE / Ms MAIKEBAIs CAT). Codex integration and additional development are by Li Xian（李显）. The distribution follows the PolyForm Noncommercial License 1.0.0 and carries the original Required Notice and music attribution. [Upstream project](https://github.com/Ryder191/haloflux) · [License](LICENSE) · [Notices](NOTICE.md)
 
 ---
 

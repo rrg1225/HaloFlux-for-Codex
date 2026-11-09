@@ -175,6 +175,8 @@ async (page, disconnectStreams, _directory, streamCount) => {
       (await Promise.all([state(page), state(second)])).every(view =>
         view.outcome === '已完成' && !view.approval && view.privateCards === 0));
     const task = (await step('F: read the demo timeline', () => api(page, 'demo-details'))).body.task;
+    check(task.timeline.filter(item => item.event === 'turn-started').length === 1 && task.outcome === 'completed',
+      'Reloads and SSE reconnect must preserve the original turn through completion');
     check(task.timeline.filter(item => item.event === 'approval-result' && item.status === 'decline').length === 1,
       'Expected one decline in the task timeline');
     await step('F: start a new approval', () => page.getByRole('button', { name: '模拟审批' }).click({ timeout: 10000 }));

@@ -1,4 +1,6 @@
+param([string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1') -Scope Local
 $project = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -Raw -LiteralPath (Join-Path $project 'package.json') | ConvertFrom-Json).version
 if ($version -notmatch '^\d+\.\d+\.\d+(?:-[a-z0-9.]+)?$') { throw 'Invalid package version.' }
@@ -7,7 +9,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Release source validation failed.' }
 
 $files = [string[]](Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release-files.txt'))
 [Array]::Sort($files, [StringComparer]::Ordinal)
-$release = Join-Path $project 'dist'
+$release = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $project 'dist' }
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 $name = "HaloFlux-for-Codex-v$version-windows.zip"
 $zip = Join-Path $release $name
@@ -48,8 +50,15 @@ try {
         $archive.Dispose()
     }
     $hash = (Get-FileHash -LiteralPath $stage).Hash.ToLowerInvariant()
-    Move-Item -LiteralPath $stage -Destination $zip -Force
-    [IO.File]::WriteAllText("$zip.sha256", "$hash  $name`n", [Text.Encoding]::ASCII)
+    $checksum = "$hash  $name`n"
+    if ((Test-Path -LiteralPath $zip) -and (Get-FileHash -LiteralPath $zip).Hash -ne $hash) {
+        throw 'A different ZIP already exists for this version. Use a separate output directory.'
+    }
+    if ((Test-Path -LiteralPath "$zip.sha256") -and [IO.File]::ReadAllText("$zip.sha256") -cne $checksum) {
+        throw 'A different checksum already exists for this version. Use a separate output directory.'
+    }
+    if (!(Test-Path -LiteralPath $zip)) { Move-Item -LiteralPath $stage -Destination $zip }
+    if (!(Test-Path -LiteralPath "$zip.sha256")) { [IO.File]::WriteAllText("$zip.sha256", $checksum, [Text.Encoding]::ASCII) }
     Write-Output "$hash  $name"
 } finally {
     if (Test-Path -LiteralPath $stage -PathType Leaf) { Remove-Item -LiteralPath $stage }

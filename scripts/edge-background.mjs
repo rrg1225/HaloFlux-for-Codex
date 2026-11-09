@@ -49,21 +49,23 @@ try {
   // The default browser context keeps its native focus and visibility settings.
   browser = await chromium.connectOverCDP('http://127.0.0.1:' + port, { noDefaults: true, timeout: 10000 });
   const [context] = browser.contexts();
-  const front = context.pages()[0] ?? await context.newPage();
-  const background = await context.newPage();
   const controller = await browser.newBrowserCDPSession();
+  const front = context.pages()[0] ?? await context.newPage();
+  const opened = context.waitForEvent('page', { timeout: 10000 });
+  await controller.send('Target.createTarget', { url: 'about:blank', newWindow: true });
+  const background = await opened;
   const [frontWindow, backWindow] = await Promise.all([front, background].map(async tab => {
     const session = await context.newCDPSession(tab);
     const { targetInfo } = await session.send('Target.getTargetInfo');
     await session.detach();
     return controller.send('Browser.getWindowForTarget', { targetId: targetInfo.targetId });
   }));
-  const separateWindows = frontWindow.windowId !== backWindow.windowId;
+  assert.notEqual(frontWindow.windowId, backWindow.windowId, 'Dedicated Edge windows are required.');
   await Promise.all([front, background].map(tab => tab.goto(bridge.origin, { timeout: 10000 })));
   await until('both streams', () => bridge.streamCount === 2);
-  const setBackground = windowState => controller.send('Browser.setWindowBounds',
-    { windowId: backWindow.windowId, bounds: { windowState } });
-  if (separateWindows) await setBackground('minimized');
+  const setWindow = ({ windowId }, windowState) => controller.send('Browser.setWindowBounds',
+    { windowId, bounds: { windowState } });
+  await setWindow(backWindow, 'minimized');
   await front.bringToFront();
   report.initial = await Promise.all([read(front), read(background)]);
   await until('native background visibility', async () =>
@@ -82,7 +84,8 @@ try {
   assert.equal(report.hidden.canvas, false, 'Hidden renderer sent a fresh Canvas sample.');
   assert.equal(report.front.approval, true);
   assert.equal(bridge.streamCount, 2);
-  if (separateWindows) await setBackground('normal');
+  await setWindow(frontWindow, 'minimized');
+  await setWindow(backWindow, 'normal');
   await background.bringToFront();
   await until('native foreground and new Canvas sample', async () => {
     const view = await read(background);

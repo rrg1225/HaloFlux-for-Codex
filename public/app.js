@@ -34,11 +34,15 @@ let lastPulse;
 let nextCursor;
 let loadingThreads = false;
 let healthReport;
+let healthStale = false;
+let connectionState = 'unchecked';
 let checkingHealth = false;
 const logs = { live: [], demo: [] };
 const failureHints = {
   CODEX_SANDBOX_FAILURE: 'Codex 沙箱运行失败。可继续模拟演练。检查 Windows 沙箱日志与 Codex 安装。',
   CODEX_PROTOCOL_ERROR: 'Codex 协议不兼容或响应无效。运行 npm run check:protocol。',
+  CODEX_CLI_NOT_FOUND: '未找到 Codex CLI。安装后重启桥接。',
+  CODEX_CLI_PATH_INVALID: 'CODEX_BIN 无效。请指定本机原生可执行文件的绝对路径。',
   AUTHENTICATION_ERROR: 'Codex 身份验证失败。请检查 codex login status。',
   UNKNOWN_ENVIRONMENT_ERROR: '检查 CLI、登录状态和本地连接。',
   APPLICATION_BUG: '本地桥接处理失败。可导出诊断报告。',
@@ -242,6 +246,7 @@ function renderingEnvironment() {
     dpr: devicePixelRatio,
     visibility: document.visibilityState,
     acceleration: 'unchecked',
+    connection: { status: connectionState },
   };
 }
 async function refreshHealth() {
@@ -251,6 +256,7 @@ async function refreshHealth() {
   text('health-status', '正在检查本机环境…');
   try {
     healthReport = await api('health');
+    healthStale = false;
     const entries = Object.entries(healthFields).map(([key, [label, hint]]) => {
       const { status, version, evidence } = healthReport[key];
       const sandboxHint = {
@@ -258,7 +264,8 @@ async function refreshHealth() {
         'local-error-marker': '检测到本机沙箱初始化失败记录',
         unverified: '连接与就绪状态仅覆盖初始化检查，命令执行需单独验证',
       }[evidence];
-      return [label, [healthLabels[status], version, sandboxHint, status !== 'ok' ? hint : null,
+      const cliHint = { missing: '未安装或不在 PATH', 'invalid-path': 'CODEX_BIN 无效', unusable: 'CLI 无法运行' }[evidence];
+      return [label, [healthLabels[status], version, sandboxHint, cliHint, status !== 'ok' ? hint : null,
         key === 'sandbox' ? '运行 npm run diagnose:sandbox 核对只读执行' : null].filter(Boolean).join(' · ')];
     });
     const browser = renderingEnvironment();
@@ -276,9 +283,10 @@ async function refreshHealth() {
     $('health-export').disabled = false;
     text('health-status', '');
   } catch (error) {
-    healthReport = null;
+    healthStale = true;
     $('health-list').replaceChildren();
-    text('health-status', errorMessage(error));
+    $('health-export').disabled = !healthReport;
+    text('health-status', errorMessage(error) + (healthReport ? ' · 可导出上次的检查结果及当前浏览器状态。' : ''));
   } finally {
     checkingHealth = false;
   }
@@ -287,7 +295,8 @@ $('health-panel').addEventListener('toggle', () => { if ($('health-panel').open)
 $('health-refresh').addEventListener('click', refreshHealth);
 $('health-export').addEventListener('click', () => {
   if (!healthReport) return;
-  const file = new Blob([JSON.stringify({ ...healthReport, browser: renderingEnvironment() }, null, 2)],
+  const file = new Blob([JSON.stringify({ ...healthReport, stale: healthStale || connectionState === 'failed',
+    browser: renderingEnvironment() }, null, 2)],
     { type: 'application/json' });
   const url = URL.createObjectURL(file);
   const download = document.createElement('a');
@@ -400,18 +409,25 @@ $('run-form').addEventListener('submit', event => {
 $('interrupt').addEventListener('click', () => perform(mode === 'live' ? 'interrupt' : 'demo-interrupt'));
 
 const events = new EventSource('/api/events');
+function updateConnectionState(status) {
+  connectionState = status;
+  text('health-connection', '浏览器事件流 · ' + healthLabels[status]);
+}
 events.onmessage = event => {
   const wasConnected = isConnected();
   const previousScope = data?.live.scopeRevision;
   data = JSON.parse(event.data);
   online = true;
+  if (connectionState !== 'ok') updateConnectionState('ok');
   if (mode === 'live' && wasConnected && (!isConnected() || previousScope !== data.live.scopeRevision)) clearPrivate();
   render();
 };
 events.onerror = () => {
   online = false;
+  updateConnectionState('failed');
   clearPrivate();
   render();
 };
+updateConnectionState('unchecked');
 applySettings();
 render();

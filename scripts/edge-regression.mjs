@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { startBridge } from '../src/server.mjs';
+import { FAILURE } from '../src/diagnostics.mjs';
 
 const modulePath = process.env.HALOFLUX_PLAYWRIGHT;
 assert.ok(modulePath, 'Set HALOFLUX_PLAYWRIGHT to playwright/index.mjs.');
@@ -23,7 +24,9 @@ for (const job of jobs.length ? jobs : ['smoke', 'soak']) {
   const source = await readFile(new URL('edge-' + job + '.js', import.meta.url), 'utf8');
   const run = new Function('return (' + source + '\n)')();
   for (let repeat = 1; repeat <= (job === 'soak' ? repeats : 1); repeat++) {
-    const bridge = await startBridge({ port: 0 });
+    const bridge = await startBridge({ port: 0, resolveCodex() {
+      throw Object.assign(new Error('Browser fixture has no CLI'), { category: FAILURE.cliMissing });
+    } });
     const cpuStart = process.cpuUsage();
     const report = { headless, repeat };
     let browser, cdp, failure;

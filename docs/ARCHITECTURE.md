@@ -39,4 +39,4 @@ flowchart LR
 
 使用 `codex-cli 0.162.0` 生成的 Schema 核对请求与响应。应用支持由 HaloFlux 独立启动的 stdio App Server。该版本 CLI 也提供 daemon/proxy 与带认证的 WebSocket transport。跨客户端共享需要显式配置同一个服务、认证和线程订阅。本版本只提供本地 stdio 连接以及官方线程历史恢复。 [Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server)
 
-CLI 选择由启动进程解析。默认查找系统已有 CLI，也可用进程级 `CODEX_BIN` 显式选择原生可执行文件。协议能力由该文件实际生成的 Schema 判定。显式路径错误或安全参数缺失时，实时模式会报错，模拟模式可用。候选 0.163.0 的静态对照与实机限制见兼容性报告。 [Windows CLI 兼容性](SANDBOX.md)
+CLI 选择由启动进程解析。默认按绝对 PATH 目录查找原生程序。Windows 下识别 npm shim 旁的官方平台包布局，通过 stdio 直接运行原生文件。进程级 `CODEX_BIN` 可显式选择已信任的绝对路径。实时连接使用该文件生成的 Schema 核对核心方法、事件及安全字段，再验证握手。缺少核心能力时拒绝实时操作，缺少审批响应格式时关闭相关操作。 [Windows CLI 兼容性](SANDBOX.md) · [桌面化决策](DESKTOP-ADR.md)

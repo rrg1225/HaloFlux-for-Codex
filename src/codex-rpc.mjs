@@ -1,45 +1,49 @@
-import { spawn, execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs';
+import { delimiter, isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { EventEmitter } from 'node:events';
-import { approvalContract, safetyContract, withSchema } from './protocol.mjs';
+import { approvalContract, coreContract, withSchema } from './protocol.mjs';
 import { codexFailure, FAILURE } from './diagnostics.mjs';
 import pkg from '../package.json' with { type: 'json' };
 
 const contracts = new Map();
+const windows = process.platform === 'win32';
+const localAbsolute = file => isAbsolute(file) && (!windows || /^[a-z]:[\\/]/i.test(file));
+
+function nativeFile(file) {
+  if (!localAbsolute(file) || (windows && !/\.exe$/i.test(file))) return null;
+  try {
+    const path = realpathSync(file);
+    if (!localAbsolute(path) || (windows && !/\.exe$/i.test(path)) || !statSync(path).isFile()) return null;
+    accessSync(path, constants.X_OK);
+    return path;
+  } catch { return null; }
+}
 
 export function codexBinary() {
   if (process.env.CODEX_BIN) {
-    const file = process.env.CODEX_BIN;
-    if (!isAbsolute(file) || !existsSync(file) || (process.platform === 'win32' && !/\.exe$/i.test(file))) {
-      throw new Error('CODEX_BIN must point to an absolute native executable.');
-    }
+    const file = nativeFile(process.env.CODEX_BIN);
+    if (!file) throw new TransportError('CODEX_BIN must point to a local native executable.', FAILURE.cliPath);
     return file;
   }
-  if (process.platform !== 'win32') return 'codex';
 
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
   const target = arch === 'arm64' ? 'aarch64' : 'x86_64';
-  let paths;
-  try {
-    paths = execFileSync(join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'where.exe'), ['codex'], {
-      encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim().split(/\r?\n/);
-  } catch {
-    throw new Error('Codex executable not found.');
-  }
-  for (const path of paths) {
-    if (/\.exe$/i.test(path)) return path;
-    const scope = join(dirname(path), 'node_modules', '@openai');
+  // Search only absolute PATH entries. Windows where.exe also searches the working directory.
+  for (const directory of (process.env.PATH ?? '').split(delimiter).filter(localAbsolute)) {
+    const executable = nativeFile(join(directory, windows ? 'codex.exe' : 'codex'));
+    if (executable) return executable;
+    if (!windows || !existsSync(join(directory, 'codex.cmd'))) continue;
+    const scope = join(directory, 'node_modules', '@openai');
     const vendor = ['vendor', target + '-pc-windows-msvc', 'bin', 'codex.exe'];
     for (const root of [join(scope, 'codex', 'node_modules', '@openai', 'codex-win32-' + arch),
       join(scope, 'codex-win32-' + arch), join(scope, 'codex')]) {
-      const file = join(root, ...vendor);
-      if (existsSync(file)) return file;
+      const file = nativeFile(join(root, ...vendor));
+      if (file) return file;
     }
   }
-  throw new Error('Set CODEX_BIN to the native Codex executable.');
+  throw new TransportError('Codex executable not found.', FAILURE.cliMissing);
 }
 
 export class RpcError extends Error {
@@ -58,23 +62,29 @@ export class TransportError extends Error {
 }
 
 export class CodexRpc extends EventEmitter {
-  constructor({ cwd, command = codexBinary(), args = ['app-server', '--listen', 'stdio://'] } = {}) {
+  constructor({ cwd, command = codexBinary(), args = ['app-server', '--listen', 'stdio://'],
+    env = process.env, readSchema = withSchema } = {}) {
     super();
     this.pending = new Map();
     this.sequence = 0;
     this.closed = false;
     this.command = command;
+    this.env = env;
+    this.readSchema = readSchema;
     this.decoder = new StringDecoder('utf8');
     this.buffer = '';
-    this.child = spawn(command, args, { cwd, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+    this.shutdown = new AbortController();
+    this.child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
     this.child.stdout.on('data', chunk => this.read(chunk));
     this.child.stdout.on('end', () => this.close());
     this.child.stdin.on('error', () => this.close());
     this.child.on('error', () => this.close());
-    this.child.on('close', () => this.close());
+    this.exited = new Promise(resolve => this.child.once('close', resolve));
+    this.child.once('close', () => this.close());
   }
 
   read(chunk) {
+    if (this.closed) return;
     this.buffer += this.decoder.write(chunk);
     if (this.buffer.length > 16 * 1024 * 1024) return this.close();
     let end;
@@ -124,36 +134,55 @@ export class CodexRpc extends EventEmitter {
   }
 
   async initialize() {
-    if (!contracts.has(this.command)) {
-      contracts.set(this.command, withSchema(this.command, async read => ({
-        safety: await safetyContract(read),
-        approvals: await approvalContract(read).catch(() => null),
-      })).catch(() => {
-        contracts.delete(this.command);
-        return null;
-      }));
-    }
-    const contract = await contracts.get(this.command);
+    const inspect = () => this.readSchema(this.command, async read => ({
+      safety: await coreContract(read),
+      approvals: await approvalContract(read).catch(() => null),
+    }), this.env, this.shutdown.signal);
+    // An upgraded file at the same path must have its own protocol cache entry.
+    const cacheable = this.readSchema === withSchema && this.env === process.env;
+    const stat = cacheable ? statSync(this.command) : null;
+    const fingerprint = stat && `${stat.size}/${stat.mtimeMs}/${stat.ctimeMs}`;
+    const cached = cacheable && contracts.get(this.command);
+    const check = cached?.fingerprint === fingerprint ? Promise.resolve(cached.contract) : inspect();
+    this.schemaCheck = check;
+    const contract = await check.catch(() => {
+      throw new TransportError('Codex schema could not be read.', FAILURE.protocol);
+    });
+    if (cacheable && !this.closed) contracts.set(this.command, { fingerprint, contract });
     this.safetyContract = contract?.safety === true;
     this.approvalContract = this.safetyContract ? contract.approvals : null;
-    await this.call('initialize', {
+    if (!this.safetyContract) throw new TransportError('Required Codex methods or safety fields are unavailable.', FAILURE.protocol);
+    const result = await this.call('initialize', {
       clientInfo: { name: 'haloflux_for_codex', title: 'HaloFlux for Codex', version: pkg.version },
       capabilities: this.approvalContract ? { experimentalApi: true } : null,
     });
+    if (!result || typeof result.userAgent !== 'string' || !result.userAgent) {
+      throw new TransportError('Codex handshake response is invalid.', FAILURE.protocol);
+    }
     this.send({ method: 'initialized' });
   }
 
   close(category = FAILURE.environment) {
-    if (this.closed) return;
+    if (this.closed) return this.closing;
     this.closed = true;
+    // Give the owned App Server an EOF before falling back to terminating it.
+    const deadline = setTimeout(() => {
+      this.child.stdin.destroy();
+      this.child.stdout.destroy();
+      this.child.kill();
+    }, 350).unref();
+    this.closing = Promise.allSettled([this.exited, this.schemaCheck]).finally(() => {
+      clearTimeout(deadline);
+    });
+    this.shutdown.abort();
     this.buffer = '';
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new TransportError('Codex connection lost.', category));
     }
     this.pending.clear();
-    this.child.stdin.destroy();
-    this.child.kill();
+    this.child.stdin.end();
     this.emit('closed', category);
+    return this.closing;
   }
 }

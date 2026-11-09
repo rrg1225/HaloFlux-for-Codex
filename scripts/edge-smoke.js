@@ -106,6 +106,15 @@ async (page, disconnectStreams, directory = 'output/playwright') => {
     const [download] = await Promise.all([page.waitForEvent('download'),
       page.getByRole('button', { name: '导出脱敏诊断报告' }).click()]);
     check(download.suggestedFilename() === 'haloflux-diagnostics.json', 'Unexpected diagnostics filename');
+    const file = await download.createReadStream();
+    const chunks = [];
+    for await (const chunk of file) chunks.push(chunk);
+    const serialized = Buffer.concat(chunks).toString('utf8');
+    const diagnostics = JSON.parse(serialized);
+    check(diagnostics.browser.connection.status === 'ok' && diagnostics.local.status === 'ok' &&
+      diagnostics.cli.evidence === 'missing' && diagnostics.login.status === 'unchecked' && !diagnostics.stale,
+    'Unexpected health status in exported JSON');
+    check(!/token|ticket|prompt|threadId|PRIVATE_/i.test(serialized), 'Private fields in exported JSON');
   }
   check(!problems.length, JSON.stringify(problems));
   return { results, low, realSseReconnect: typeof disconnectStreams === 'function',

@@ -114,7 +114,7 @@ export class CodexSession {
     this.interrupting = null;
     this.connection = 'disconnected';
     this.adapter.reset(this.threadId);
-    if (this.retry < RETRY_MS.length) {
+    if (![FAILURE.protocol, FAILURE.cliMissing, FAILURE.cliPath].includes(category) && this.retry < RETRY_MS.length) {
       this.retryTimer = setTimeout(() => this.connect(), RETRY_MS[this.retry++]);
       this.retryTimer.unref?.();
     }
@@ -386,6 +386,8 @@ export class CodexSession {
     clearInterval(this.expiry);
     clearTimeout(this.retryTimer);
     clearTimeout(this.adapter.timer);
-    this.rpc?.close();
+    const rpc = this.rpc;
+    this.rpc = null;
+    return rpc?.close();
   }
 }
