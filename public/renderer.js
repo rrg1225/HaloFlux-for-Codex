@@ -31,18 +31,20 @@
   let healthy = 0;
   let reflow;
   let frameId = null;
+  let paused = false;
   let previousHue;
   const tiers = [1.5, 1.25, 1, .85];
   const originalFrame = frame;
   const originalDraw = drawStage;
+  const overlay = document.body?.classList.contains('codex-overlay') === true;
   // The original small charts show demo data. Only the main Canvas runs in the embedded mode.
   drawAdv = drawDiff = drawVal = drawIdx = agentsTick = drawCallout = () => {};
 
-  window.haloFluxDpr = dpr => Math.min(dpr, settings.low ? .85 : tiers[quality]);
+  window.haloFluxDpr = dpr => Math.min(dpr, settings.low ? .85 : tiers[quality], overlay && settings.autoQuality ? 1 : 1.5);
   // Composed browser scaling can report 1.0000000298 at DPR 1.
   const dprChanged = previous => Math.abs(window.haloFluxDpr(devicePixelRatio) - previous) >= 1e-6;
   window.haloFluxScheduleFrame = () => {
-    if (frameId === null && !document.hidden) {
+    if (frameId === null && !document.hidden && !paused) {
       frameId = requestAnimationFrame(now => {
         frameId = null;
         frame(now);
@@ -79,16 +81,17 @@
     samples = [];
     sampledMs = 0;
   }
-  document.addEventListener('visibilitychange', () => {
+  function syncVisibility() {
     resetSamples();
     last = performance.now();
-    if (document.hidden) {
+    if (document.hidden || paused) {
       if (frameId !== null) cancelAnimationFrame(frameId);
       frameId = null;
     } else if (started) {
       window.haloFluxScheduleFrame();
     }
-  });
+  }
+  document.addEventListener('visibilitychange', syncVisibility);
 
   function measure(now, cap) {
     if (lastDraw !== null) {
@@ -120,7 +123,7 @@
   }
   frame = function (now) {
     const cap = settings.low || state === 'idle' ? Math.min(settings.fps, 20) : settings.fps;
-    if (document.hidden || !ready || now < nextDraw - 1) {
+    if (document.hidden || paused || !ready || now < nextDraw - 1) {
       window.haloFluxScheduleFrame();
       return;
     }
@@ -165,8 +168,14 @@
   const colors = { cyan: '156deg', violet: '235deg', amber: '7deg', native: '' };
   window.addEventListener('message', event => {
     if (event.source !== parent || event.origin !== location.origin || event.data?.type !== 'haloflux-frame') return;
-    const { state: nextState, activity, activeKind, pulse: nextPulse, settings: s } = event.data;
-    if (!s || !Object.hasOwn(profiles, nextState)) return;
+    const { state: signal, activity, activeKind, pulse: nextPulse, settings: s } = event.data;
+    if (!s || !Object.hasOwn(profiles, signal)) return;
+    const nextState = signal === 'completed' && s.completionAnimation === false ? 'idle' : signal;
+    const nextPaused = event.data.paused === true;
+    if (paused !== nextPaused) {
+      paused = nextPaused;
+      syncVisibility();
+    }
     if (state !== nextState) {
       if (state === 'idle' || nextState === 'idle') resetSamples();
       entered = performance.now();

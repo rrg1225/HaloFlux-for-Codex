@@ -16,6 +16,12 @@
 
 浏览器测试使用已安装的 Playwright。将 `HALOFLUX_PLAYWRIGHT` 指向 `playwright/index.mjs`，设置 `HALOFLUX_EDGE_HEADED=1`，可用 `HALOFLUX_EDGE_OUTPUT` 指定报告目录。每轮严格双标签测试固定 12 次刷新、24 次模式切换和 120 秒驻留。`test:edge:background` 使用独立原生 Edge 窗口验证隐藏和恢复。性能复测与浏览器回归串行运行。 [性能复测](PERFORMANCE.md)
 
+## Windows 桌面 Alpha
+
+用已校验并解压的 Electron 运行 `scripts/test-desktop.cjs`。默认用 Mock 轮次覆盖有头窗口、托盘、透明 Canvas、退出与性能。传入 `--handshake` 仅使用已安装的 CLI 做隔离的无模型握手。传入 `--balloon` 通过 Windows 托盘发送一个固定文案的 Mock 完成通知，并等待 Windows 的呈现事件。运行时可用 `HALOFLUX_DESKTOP_OUTPUT` 指定 JSON 和截图目录。
+
+用 `node scripts/test-desktop-package.mjs <desktop.zip>` 复验发行物。脚本核对侧车、从中文空格目录启动已解压 EXE、验证单实例并核对退出进程和端口。 [桌面进程](DESKTOP-PROCESSES.md) · [桌面性能](DESKTOP-PERFORMANCE.md)
+
 ## 测试可信度
 
 - HTTP、SSE、浏览器与打包证据分别检查协议字段、实际 DOM 和终态、ZIP 条目及哈希。进程退出码用于传递测试失败，沙箱命令还必须产生完整回显。

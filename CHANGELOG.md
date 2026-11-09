@@ -2,6 +2,13 @@
 
 本地 Git 历史从导入 `v0.3.2-beta.1` 开始。更早版本的条目来自已有发布记录。
 
+## 0.4.0-alpha.1
+
+- 增加独立 Windows x64 Electron 窗口、单实例锁、窗口位置和尺寸恢复及显示器边界校正。
+- 桌面通过专属 Node utility process 复用原桥接和审批逻辑。主窗口与只读悬浮窗使用同一服务，并分配不同的回环请求能力。
+- 新增托盘、可选关闭到托盘、真实任务退出选择、透明悬浮光环、分窗帧率与画质、原生通知及非敏感桌面设置。
+- 提供含运行时的便携 ZIP、SHA-256 和独立的 Electron 性能与进程验收。浏览器 ZIP 继续单独分发。 [桌面 Alpha 验收](docs/VERIFICATION.md)
+
 ## 0.3.3-rc.1
 
 - 建立本地 Git 基线和发布标签。原版 11 个文件继续按 `docs/ORIGINALS.sha256` 校验。
@@ -10,7 +17,7 @@
 - 统一 `Q` 和信号的关停路径。结束 SSE 和探针，等待桥接启动的 App Server 关闭，并合并重复退出请求。
 - 将 DPR 比较中的亚像素舍入差异排除出 Canvas 重建条件。保留画质档、构图和原版绘制路径。
 - 分组维护离线、浏览器、性能、安全和 Windows 打包测试。Node.js 22/24 的 CI 只执行离线项目。
-- 提供可复验 Windows ZIP、SHA-256、同条件有头 Edge A/B 和桌面化决策。 [本版验收](docs/VERIFICATION.md)
+- 提供可复验 Windows ZIP、SHA-256、同条件有头 Edge A/B 和桌面化决策。 [本版验收](docs/VERIFICATION-v0.3.3.md)
 
 ## 0.3.2-beta.1
 

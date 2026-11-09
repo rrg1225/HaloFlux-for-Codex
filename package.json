@@ -1,7 +1,8 @@
 {
   "name": "haloflux-for-codex",
-  "version": "0.3.3-rc.1",
+  "version": "0.4.0-alpha.1",
   "type": "module",
+  "main": "desktop/entry.mjs",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
   "engines": { "node": ">=22" },
@@ -21,6 +22,7 @@
     "test:edge:background": "node scripts/edge-background.mjs",
     "test:performance": "node scripts/edge-matrix.mjs",
     "test:windows": "powershell.exe -NoProfile -File scripts/test-windows.ps1",
+    "build:desktop": "powershell.exe -NoProfile -File scripts/release-desktop.ps1",
     "test:live": "node scripts/smoke-live.mjs",
     "test:live:approvals": "node scripts/smoke-approvals.mjs"
   }

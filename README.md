@@ -1,4 +1,4 @@
-# HaloFlux for Codex v0.3.3-rc.1
+# HaloFlux for Codex v0.4.0-alpha.1
 
 Original HALOFLUX by Ryder191 (RYDER CODE / Ms MAIKEBAIs CAT). [原始仓库](https://github.com/Ryder191/haloflux)
 
@@ -10,13 +10,15 @@ HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目
 
 ## Windows 快速开始
 
-解压 Windows ZIP，安装 Node.js 22 或更新版本，再双击 `Start-HaloFlux.cmd`。启动器会检查运行环境并打开默认浏览器。实时模式还需要安装 Codex CLI 并登录。启动器检测不到 CLI 或登录时，仍可进入模拟模式。项目无第三方运行时依赖。
+**桌面 Alpha（Windows x64）**。核对 SHA-256 后完整解压桌面 ZIP，双击 `HaloFlux.exe`。随包提供 Electron、Chromium 和 Node。默认在模拟模式启动。桌面设置可选择关闭时退出或留在托盘，托盘菜单可打开窗口、切换信号来源和恢复悬浮窗点击。 [桌面使用说明与已知问题](docs/DESKTOP-WINDOWS.md)
+
+**浏览器版**。完整解压浏览器 ZIP，安装 Node.js 22 或更新版本，再双击 `Start-HaloFlux.cmd`。启动器检查环境并打开默认浏览器。实时模式需要单独安装 Codex CLI 并登录。
 
 启动器中输入 `Q` 并回车即可关闭桥接。开发者可在项目目录运行 `npm.cmd start`，访问本地地址 `http://127.0.0.1:4637`，按 `Ctrl+C` 停止服务。自定义工作目录、端口和 CLI 路径见 [Windows 使用说明](docs/WINDOWS.md)。
 
-本包为 Windows 发布候选版。npm Codex CLI 0.162.0 通过本版 Schema 检查与隔离握手。该 CLI 在此前的本机实测中遇到 Windows 沙箱 Error 32。0.163.0 仅完成官方发布元数据与标签 Schema 核对，实机验证待授权。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
+Codex CLI 0.162.0 通过本版 Schema 检查与隔离握手。普通 Windows 沙箱 Error 32 仍沿用上游阻塞记录。0.163.0 实机验证待授权，真实模型任务与真实审批本轮未验证。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
 
-有头 Edge 回归分别检查 SSE 建连、刷新、模式切换、并发模拟审批、可见性和绘制恢复。各版本 1080p 固定档与自动档的实测数据、质量切换及帧间隔见性能报告。 [双标签排查](docs/DUAL-TAB.md) · [性能对照](docs/PERFORMANCE.md)
+浏览器与 Electron 分别测试。 [验收](docs/VERIFICATION.md) · [Electron 性能](docs/DESKTOP-PERFORMANCE.md) · [历史 Edge 对照](docs/PERFORMANCE.md)
 
 ## 使用界面
 
@@ -51,7 +53,9 @@ npm.cmd run test:windows
 
 HaloFlux visualizes Codex task state with the original HALOFLUX Canvas. The local bridge streams status and counts to the browser. Open the task details or approval panel to inspect private content on demand. [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
-1. Verify the ZIP against its SHA-256 file. Extract it to a writable Windows folder and install Node.js 22 or newer.
+For the desktop Alpha, verify the Windows x64 desktop ZIP, extract it and double-click `HaloFlux.exe`. The desktop package includes its own runtime. Use Desktop Settings to change close behavior and the tray menu to open the optional halo, recover its pointer input or quit. [Desktop guide and known issues](docs/DESKTOP-WINDOWS.md)
+
+1. For the browser build, verify the ZIP against its SHA-256 file. Extract it to a writable Windows folder and install Node.js 22 or newer.
 2. Open `Start-HaloFlux.cmd` to start the bridge and launch your default browser. Type `Q` and press Enter in the launcher to stop it. From a terminal, `npm.cmd start` also serves the UI at `http://127.0.0.1:4637` and stops with Ctrl+C.
 3. Use **模拟演练** (Demo) to try success, failure or an approval without a Codex account. For **实时 Codex** (Live), install the official CLI, sign in through `codex login` and select **连接 Codex** (Connect). Create, list or resume a thread, then run or interrupt a task.
 4. In **查看请求并决定** (Review and decide), inspect the scoped command, permissions or patch. Choose a one-time decision offered for that request. Refresh restores the pending state, and a used or outdated approval ticket is rejected.

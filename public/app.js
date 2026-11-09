@@ -21,6 +21,9 @@ const eventsLabel = {
 const connections = { connected: 'Codex 已连接', connecting: 'Codex 连接中', disconnected: 'Codex 未连接', resume_failed: 'Codex 已连接 · 恢复失败' };
 const fallback = { state: 'idle', activity: null, pulse: 0, counts: {}, approvals: [], active: false };
 const visual = document.querySelector('.visual');
+const desktop = window.haloDesktop;
+const desktopVisualKeys = { fps: 'fps', color: 'theme', autoQuality: 'autoQuality' };
+let desktopState;
 let mode = 'demo';
 let data;
 let online = false;
@@ -66,6 +69,9 @@ for (const key in settings) {
   settings[key] = read();
   field.addEventListener('input', () => {
     settings[key] = read();
+    if (desktop && Object.hasOwn(desktopVisualKeys, key)) {
+      desktop.preference(desktopVisualKeys[key], settings[key]).catch(() => {});
+    }
     try { localStorage.setItem('haloflux.settings.v2', JSON.stringify(settings)); } catch {}
     applySettings();
   });
@@ -80,8 +86,11 @@ function applySettings() {
 
 function sendFrame() {
   const { state, activity, activeKind, pulse } = online ? data?.[mode] ?? fallback : fallback;
+  const fps = desktopState?.sharedDrawing && settings.autoQuality ? Math.min(settings.fps, 30) : settings.fps;
   frame.contentWindow?.postMessage({
-    type: 'haloflux-frame', state, activity, activeKind, pulse: mode + '/' + pulse, settings,
+    type: 'haloflux-frame', state, activity, activeKind, pulse: mode + '/' + pulse,
+    paused: desktopState?.paused === true, settings: { ...settings, fps,
+      completionAnimation: desktopState?.preferences.completionAnimation },
   }, location.origin);
 }
 frame.addEventListener('load', sendFrame);
@@ -369,12 +378,16 @@ async function loadThreads(cursor) {
   }
 }
 
+function changeMode(name) {
+  if (mode !== name) clearPrivate();
+  mode = name;
+  showError('');
+  render();
+}
 for (const name of ['demo', 'live']) {
   $(name + '-mode').addEventListener('click', () => {
-    if (mode !== name) clearPrivate();
-    mode = name;
-    showError('');
-    render();
+    if (desktop) desktop.mode(name).catch(() => {});
+    else changeMode(name);
   });
 }
 document.querySelectorAll('[data-scenario]').forEach(button => {
@@ -431,3 +444,42 @@ events.onerror = () => {
 updateConnectionState('unchecked');
 applySettings();
 render();
+
+if (desktop) {
+  const controls = [...document.querySelectorAll('[data-preference]')];
+  for (const field of controls) {
+    field.addEventListener('change', () => {
+      const value = field.type === 'checkbox' ? field.checked :
+        field.type === 'range' || field.dataset.preference === 'overlayFps' ? Number(field.value) : field.value;
+      desktop.preference(field.dataset.preference, value).catch(() => {});
+    });
+  }
+  function sync(next) {
+    if (!next) return;
+    const openSettings = next.settingsRequest > (desktopState?.settingsRequest ?? 0);
+    desktopState = next;
+    const prefs = next.preferences;
+    for (const field of controls) {
+      const value = prefs[field.dataset.preference];
+      if (field.type === 'checkbox') field.checked = value;
+      else field.value = value;
+    }
+    for (const [key, preference] of Object.entries(desktopVisualKeys)) {
+      settings[key] = prefs[preference];
+      if ($(key).type === 'checkbox') $(key).checked = settings[key];
+      else $(key).value = settings[key];
+    }
+    text('desktop-close-note', prefs.close === 'tray' ? '关闭主窗口会保留托盘与后台任务。' :
+      '关闭主窗口会退出应用。真实任务运行时会先询问。');
+    $('desktop-tools').hidden = false;
+    if (openSettings) {
+      $('desktop-settings').open = true;
+      $('desktop-settings').scrollIntoView({ block: 'nearest' });
+    }
+    if (mode !== next.mode) changeMode(next.mode);
+    applySettings();
+  }
+  $('desktop-overlay-toggle').addEventListener('click', () => desktop.overlay().catch(() => {}));
+  desktop.subscribe(sync);
+  desktop.read().then(next => { if (!desktopState) sync(next); }).catch(() => {});
+}

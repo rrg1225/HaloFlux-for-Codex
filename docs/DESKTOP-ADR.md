@@ -1,24 +1,21 @@
-# ADR 001 · v0.4.0 Windows 桌面容器
+# ADR 001 · Windows 桌面容器
 
-状态为技术选型，待准入后实施。当前采用 **C. 独立浏览器界面和 Windows 启动器**，作为 v0.4.0 的可运行基线。保留 Node.js 桥接、现有 UI、原版 Canvas 嵌入和 stdio Codex 适配器。正式桌面版本仍需完成下文的准入验证。
+v0.4.0-alpha.1 采用 Electron 45.2.3，Windows x64 便携分发。浏览器模式仍有独立入口和 ZIP。
 
-| 维度 | Electron | Tauri 2 | 浏览器与启动器 |
-| --- | --- | --- | --- |
-| Windows 兼容性 | 随包 Chromium，渲染引擎可随版本固定。需要验证目标 Windows 构建及 GPU 驱动。 | 依赖 Windows WebView2，需覆盖运行时安装、更新和不同部署方式。 | 使用现有系统默认浏览器。有头 Edge 已有回归基准。 |
-| 开发复杂度 | JS 主进程能复用 Node 桥接。新增受隔离的 renderer、生命周期、IPC 安全和安装流程。 | 保留 Node 需 sidecar 或另行分发 Node，新增 Rust 外壳、权限配置和子进程管理。 | 已实现，维护现有 CMD、Node 服务和浏览器入口。 |
-| 内存占用 | Chromium 与 Node 多进程，预计独立运行开销较高。 | 系统 WebView2 加 Node sidecar，需分别测空闲和任务负载。 | 依赖浏览器是否已启动及标签隔离。当前有 Edge V8 堆证据。 |
-| Canvas GPU 加速 | Chromium Canvas 可复用，需在有头安装包上复测透明度和 GPU 合成。 | WebView2 上需独立测量同等画质、驱动与呈现路径。 | 保留现有 Edge 画布、自动档和 1080p A/B 复测。 |
-| 进程管理 | 主进程可持有 Node 服务与 App Server 的生命周期。 | Rust 外壳需管理 Node sidecar，再由 Node 管理 Codex。 | 启动器拥有 Node，Node 负责 stdio、连接关闭和端口释放。 |
-| 本地 Codex CLI | Node 主进程可继续用当前绝对路径解析和 stdio。 | 仍由 Node sidecar 使用当前路径解析和 stdio。 | 复用进程级 `CODEX_BIN` 与 Schema 探测。 |
-| 系统托盘 | `Tray` API 可实现，需定义关闭窗口和退出的行为。 | 框架提供系统托盘，仍需和 sidecar 生命周期联动。 | 当前无独立托盘。 |
-| 透明悬浮窗口 | `BrowserWindow` 提供透明窗口能力，需原型验证置顶、输入和 GPU。 | 需验证 Windows WebView2 透明合成、拖动和命中区域。 | 当前浏览器入口无系统级透明悬浮窗口。 |
-| 打包尺寸 | 随包 Chromium 和 Node，预计体积最大。 | 外壳较轻，完整尺寸取决于 WebView2 分发方式和 Node sidecar。 | 当前 Windows ZIP 由应用源码和原版资源组成，系统另装 Node 与浏览器。 |
-| 维护成本 | Electron 安全更新、安装包、签名和 IPC 回归。 | Rust、Windows 安装器、WebView2 版本与 sidecar 更新。 | 现有 Node 22/24、Windows ZIP 和 Edge 回归。 |
+| 维度 | Electron | Tauri 2 |
+| --- | --- | --- |
+| 后端复用 | 随包 Node，utility process 可直接导入现有桥接，仍用 stdio 启动已安装 CLI。 | Rust 壳需额外分发 Node sidecar，并处理 Rust、Node 和 CLI 三段生命周期。 |
+| Canvas 与 Windows | 固定 Chromium 156，便于按版本检查 Canvas 和 DPI。透明合成有额外 GPU 成本。 | 复用 HTML Canvas，WebView2 的版本、硬件加速和透明合成需要单独采样。 |
+| 托盘与悬浮 | 原生 Tray，透明 BrowserWindow。拖动使用窗口区域，独立缩放柄调用原生窗口边界。 | 托盘可用，Windows WebView2 透明窗口和输入命中仍需要实机原型。 |
+| 安全 | Electron 主进程与 utility process 可信，renderer 隔离、沙箱化、限制网络与 IPC。Chromium 随版本更新。 | Tauri Capabilities 可限权，另需限制 Node sidecar 的参数和运行环境。 |
+| 大小与依赖 | Chromium、Node 和 DLL 随包，包体与运行内存都需测量。用户无需安装 Node。 | 外壳体积更小，仍要考虑 WebView2 和 Node 的可用性、分发尺寸及维护。 |
 
-框架体积、内存、驱动与透明窗口成本是待原型验证的判断。 [Electron 进程模型](https://www.electronjs.org/docs/latest/tutorial/process-model) · [Electron 安全指南](https://www.electronjs.org/docs/latest/tutorial/security) · [BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window) · [Tauri 架构](https://v2.tauri.app/concept/architecture/) · [Tauri Sidecar](https://v2.tauri.app/develop/sidecar/) · [Tauri 托盘](https://v2.tauri.app/learn/system-tray/) · [Tauri Windows 安装包](https://v2.tauri.app/distribute/windows-installer/)
+选择 Electron 是为了固定渲染引擎并复用现有 Node 进程模型。透明窗口默认上限 30 FPS，主窗口隐藏时显式停止 Canvas，悬浮窗隐藏时销毁。Electron 的实际资源开销由独立报告记录。 [性能报告](DESKTOP-PERFORMANCE.md) · [Electron 进程模型](https://www.electronjs.org/docs/latest/tutorial/process-model) · [Tauri Sidecar](https://v2.tauri.app/develop/sidecar/)
 
-## 边界与准入
+## 准入记录
 
-- 当前浏览器壳继续使用回环、同源和操作令牌。未来若托盘或透明置顶成为硬需求，优先做 Electron 小样。启用上下文隔离和 renderer 沙箱，保持 Node 特权在主进程，限制导航和 IPC 能力，沿用同一桥接和审批策略。
-- 产品侧复测安装、重复启动、关停、多个标签页和原版 1080p Canvas。在支持的 Windows 环境上验证命令回显、人工审批和中断。桌面壳需单独证明浏览器或 renderer 无法绕过作用域与票据校验。
-- 上游侧需要授权后的候选 CLI 隔离验证，以及普通只读沙箱执行的实机证据。应用的离线成熟度与沙箱兼容性分别评估。 [本版验收](VERIFICATION.md) · [CLI 兼容性](SANDBOX.md)
+1. **Stage 0 VERIFIED**。干净的 `main` 和 `v0.3.3-rc.1` 指向 `9b0b5c5`。基线 23 项测试、原文件哈希、浏览器 ZIP 可重建及中文空格路径启动通过。
+2. **Stage 1 VERIFIED**。Windows 11 原型启动独立 Electron 窗口、加载现有 UI 并完成 Canvas 绘制，随后关闭。DPR 为 1.5，Canvas 后备缓冲为 837 × 583，样本约 16.4 FPS（待机上限 20 FPS）。初次窗口受遮挡时未取得可见帧，前台重试通过。
+3. **Stage 2 VERIFIED / MOCK VERIFIED**。独立 worker 就绪后加载页面，端口冲突时拒绝启动。未授权请求和只读能力读取控制台被拒绝，桌面 HTML 无操作令牌。模拟场景可用，关闭后回环端口和 worker 已释放。通过后接入托盘与悬浮窗。
+
+普通 Windows 沙箱执行单独验收。桌面原型的通过没有改变现有浏览器启动器的角色。 [总验收](VERIFICATION.md) · [Electron 安全指南](https://www.electronjs.org/docs/latest/tutorial/security) · [透明窗口行为](https://www.electronjs.org/docs/latest/tutorial/custom-window-styles#transparent-windows)

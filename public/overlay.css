@@ -1,0 +1,9 @@
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { color: #e3f5ee; font: 13px/1.4 "Segoe UI", "Microsoft YaHei", sans-serif; user-select: none; }
+iframe { display: block; position: absolute; inset: 0; border: 0; width: 100%; height: 100%; pointer-events: none; }
+.handle { position: absolute; inset: 5px 5px auto; display: flex; align-items: center; justify-content: space-between;
+  gap: 4px; border-radius: 6px; padding: 2px 4px 2px 10px; background: #101b21e6; app-region: drag; }
+button { border: 1px solid #608883; background: #14262a; color: #dbfff4; border-radius: 4px; width: 28px; height: 27px;
+  font: inherit; cursor: pointer; app-region: no-drag; }
+button:focus-visible { outline: 2px solid #ffcd8a; }
+#resize { position: absolute; right: 5px; bottom: 5px; cursor: nwse-resize; touch-action: none; }

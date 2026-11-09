@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HaloFlux 光环</title>
+  <link rel="stylesheet" href="/overlay.css">
+  <script type="module" src="/overlay.js"></script>
+</head>
+<body>
+  <iframe id="halo" src="/canvas-overlay" title="HaloFlux 原版状态画布"></iframe>
+  <header class="handle">
+    <span id="status" role="status">HaloFlux · 等待信号</span>
+    <button id="hide" type="button" aria-label="关闭悬浮光环">×</button>
+  </header>
+  <button id="resize" type="button" aria-label="拖动或使用方向键调整悬浮窗大小">◢</button>
+</body>
+</html>

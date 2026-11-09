@@ -17,6 +17,7 @@ export class CodexSession {
     this.connection = 'disconnected';
     this.threadId = null;
     this.rpc = null;
+    this.draining = new Set();
     this.retry = 0;
     this.busy = false;
     this.clock = clock;
@@ -105,7 +106,12 @@ export class CodexSession {
   disconnected(rpc, category = FAILURE.environment) {
     if (rpc && this.rpc !== rpc) return;
     this.rpc = null;
-    rpc?.close();
+    const closing = rpc?.close();
+    if (closing) {
+      this.draining.add(closing);
+      const forget = () => this.draining.delete(closing);
+      void closing.then(forget, forget);
+    }
     if (this.stopped) return;
     this.noteFailure(category);
     if (category === FAILURE.protocol) this.protocolStatus = 'failed';
@@ -388,6 +394,6 @@ export class CodexSession {
     clearTimeout(this.adapter.timer);
     const rpc = this.rpc;
     this.rpc = null;
-    return rpc?.close();
+    return Promise.all([...this.draining, rpc?.close()]);
   }
 }

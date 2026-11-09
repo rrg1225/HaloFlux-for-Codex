@@ -26,15 +26,22 @@ const STATIC = {
   '/wallpaper/audio/sw421k.mp3': 'wallpaper/audio/sw421k.mp3',
   '/LICENSE': 'LICENSE', '/NOTICE.md': 'NOTICE.md',
 };
+const DESKTOP_STATIC = {
+  '/desktop-overlay': 'public/overlay.html', '/overlay.css': 'public/overlay.css',
+  '/overlay.js': 'public/overlay.js', '/canvas-overlay': 'lab.html',
+};
 
-function localHtml(html, embed) {
+function localHtml(html, embed, overlay) {
   const offline = html.replace(/^<link[^\n]*fonts\.googleapis\.com[^\n]*>\r?\n/gm, '');
   if (!embed) return offline;
+  const canvas = overlay ? offline
+    .replace("S.fillStyle = '#08090b'; S.fillRect(0, 0, W, H);", 'S.clearRect(0, 0, W, H);')
+    .replace('if (C.vignette > 0)', 'if (false && C.vignette > 0)') :
+    offline.replace("stage.getContext('2d'); const S_MAIN", "stage.getContext('2d', { alpha: false }); const S_MAIN");
   // The source files stay byte-for-byte intact. The hosted embed adds its own UI boundary.
-  return offline
+  return canvas
     .replace('</head>', '<link rel="stylesheet" href="/renderer.css"></head>')
-    .replace('<body>', '<body class="codex-embed">')
-    .replace("stage.getContext('2d'); const S_MAIN", "stage.getContext('2d', { alpha: false }); const S_MAIN")
+    .replace('<body>', '<body class="codex-embed' + (overlay ? ' codex-overlay' : '') + '">')
     .replace(/^(  stage\.width = .*;)$/m, '  DPR = window.haloFluxDpr?.(DPR) ?? DPR;\n$1')
     .replace('ROT = r.height > r.width * 1.05;', 'ROT = window.haloFluxCrop?.() !== false && r.height > r.width * 1.05;')
     .replace('  buildWeb(); buildLanes(); buildCards(); buildOuter();', '  window.haloFluxCompose?.();\n  buildWeb(); buildLanes(); buildCards(); buildOuter();')
@@ -52,12 +59,16 @@ function localHtml(html, embed) {
     .replace('</body>', '<script src="/renderer.js"></script></body>');
 }
 
-async function loadAssets(token) {
-  const entries = await Promise.all(Object.entries(STATIC).map(async ([route, file]) => {
+async function loadAssets(token, desktop) {
+  const routes = desktop ? { ...STATIC, ...DESKTOP_STATIC } : STATIC;
+  const entries = await Promise.all(Object.entries(routes).map(async ([route, file]) => {
     const type = TYPES[file.split('.').at(-1)] || TYPES.md;
     let data = await readFile(new URL(file, ROOT));
-    if (route === '/') data = data.toString().replace('__BRIDGE_TOKEN__', token).replace('__VERSION__', pkg.version);
-    else if (type === TYPES.html) data = localHtml(data.toString(), route.startsWith('/canvas-'));
+    if (route === '/') {
+      data = data.toString().replace('__BRIDGE_TOKEN__', token).replace('__VERSION__', pkg.version);
+      if (desktop) data = data.replace('href="/original"', 'href="https://github.com/Ryder191/haloflux"');
+    }
+    else if (type === TYPES.html) data = localHtml(data.toString(), route.startsWith('/canvas-'), route === '/canvas-overlay');
     const hashes = type === TYPES.html ? [...data.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, script]) =>
       " 'sha256-" + createHash('sha256').update(script.replace(/\r\n?/g, '\n')).digest('base64') + "'").join('') : '';
     return [route, { type, data, hashes }];
@@ -84,13 +95,20 @@ async function readAction(request) {
   return body;
 }
 
-export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, clock, resolveCodex = codexBinary } = {}) {
-  const token = randomBytes(32).toString('hex');
-  const assets = await loadAssets(token);
+function matchesSecret(value, expected) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) &&
+    timingSafeEqual(Buffer.from(value, 'hex'), Buffer.from(expected, 'hex'));
+}
+
+export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, clock, resolveCodex = codexBinary,
+  desktop, observe } = {}) {
+  const token = desktop?.operation ?? randomBytes(32).toString('hex');
+  const assets = await loadAssets(desktop ? '' : token, desktop);
   const streams = new Set();
   let revision = 0;
   let broadcast;
   let closing;
+  let holdingExit = false;
   const shutdown = new AbortController();
   const envelope = () => ({ revision, live: live.snapshot, demo: demo.snapshot });
   const publish = () => {
@@ -100,16 +118,24 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
     // timeline still records each event, while SSE sends only the latest snapshot.
     broadcast = setImmediate(() => {
       broadcast = null;
-      const data = 'data: ' + JSON.stringify(envelope()) + '\n\n';
+      const snapshot = envelope();
+      observe?.(snapshot, {
+        // Private notification keys stay on the desktop worker channel.
+        turn: live.adapter.detail?.turnId ?? (snapshot.live.outcome && [...live.adapter.finishedTurns].at(-1)),
+        approvals: [...live.adapter.approvals.values()].map(entry =>
+          JSON.stringify([entry.params.turnId, entry.displayKind ?? entry.kind, entry.params.itemId ?? entry.id])),
+      });
+      const data = 'data: ' + JSON.stringify(snapshot) + '\n\n';
       for (const stream of streams) {
         if (stream.writableLength > 64 * 1024) stream.destroy();
         else stream.write(data);
       }
     });
   };
-  const live = new CodexSession({ cwd, publish: () => { if (streams.size) publish(); }, makeRpc, clock });
+  const publishIfObserved = () => { if (streams.size || observe) publish(); };
+  const live = new CodexSession({ cwd, publish: publishIfObserved, makeRpc, clock });
   const healthCheck = createHealthCheck(resolveCodex, live, shutdown.signal);
-  const demo = new Demo(() => { if (streams.size) publish(); });
+  const demo = new Demo(publishIfObserved);
   let origin;
   let activeActions = 0;
   const server = createServer({ requestTimeout: 15000, headersTimeout: 10000, connectionsCheckingInterval: 5000 },
@@ -124,11 +150,17 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
       return;
     }
     const path = request.url?.split('?')[0];
+    if (desktop) {
+      const key = request.headers['x-haloflux-desktop'];
+      const readOnly = matchesSecret(key, desktop.visual) &&
+        request.method === 'GET' && desktop.visualPaths.includes(path);
+      if (!readOnly && !matchesSecret(key, desktop.control)) return json(response, 403, { error: '桌面连接未授权。' });
+    }
     const asset = assets.get(path);
     response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'" +
       (asset?.hashes ?? '') + "; style-src 'self'" + (asset?.hashes ? " 'unsafe-inline'" : '') +
       "; img-src 'self' data:; media-src 'self' blob:; frame-ancestors " +
-      (path === '/' ? "'none'" : "'self'") + "; object-src 'none'; base-uri 'none'; form-action 'self'");
+      (path === '/' || path === '/desktop-overlay' ? "'none'" : "'self'") + "; object-src 'none'; base-uri 'none'; form-action 'self'");
     if (path === '/favicon.ico' && request.method === 'GET') {
       response.writeHead(204);
       response.end();
@@ -151,8 +183,7 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
     }
     if (request.method === 'POST' && path === '/api/action') {
       const supplied = request.headers['x-haloflux-token'];
-      if (request.headers.origin !== origin || typeof supplied !== 'string' || !/^[a-f0-9]{64}$/.test(supplied) ||
-        !timingSafeEqual(Buffer.from(supplied, 'hex'), Buffer.from(token, 'hex')) ||
+      if (request.headers.origin !== origin || !matchesSecret(supplied, token) ||
         (request.headers['sec-fetch-site'] && request.headers['sec-fetch-site'] !== 'same-origin') ||
         request.headers['content-type'] !== 'application/json') {
         json(response, 403, { error: '操作未授权。' });
@@ -166,6 +197,9 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
       try {
         const body = await readAction(request);
         if (shutdown.signal.aborted) return json(response, 503, { error: '桥接正在关闭。' });
+        if (holdingExit && ['new', 'resume', 'run'].includes(body.action)) {
+          throw new ActionError('应用正在等待退出，请先取消退出。');
+        }
         if (body.action === 'health') {
           json(response, 200, await healthCheck());
         } else if (body.action === 'demo') {
@@ -229,6 +263,15 @@ export async function startBridge({ cwd = process.cwd(), port = 4637, makeRpc, c
   const disconnectStreams = () => { for (const stream of streams) stream.end(); };
   return {
     origin,
+    ...(desktop && {
+      inspectExit(hold) {
+        holdingExit = hold;
+        const status = live.snapshot;
+        return { blocked: status.busy || status.active || live.restoreTurnId != null,
+          canInterrupt: status.canInterrupt && !status.interrupting };
+      },
+      interruptForExit: () => live.action({ action: 'interrupt' }),
+    }),
     get streamCount() { return streams.size; },
     disconnectStreams,
     close() {

@@ -19,3 +19,5 @@ Copyright (c) 2026 Li Xian（李显）, limited to the Codex integration, associ
 HaloFlux for Codex is an unofficial, noncommercial, source-available derivative of HALOFLUX. Codex is an OpenAI product.
 
 The bundled “Synthwave 421k” audio is by The Cynic Project (cynicmusic), from Pixelsphere, and is distributed under CC0.
+
+The Windows desktop package includes Electron 45.2.3 under MIT and the Chromium, Node.js and other components identified in the runtime's bundled `LICENSES.chromium.html`. The runtime's `LICENSE` and `LICENSES.chromium.html` accompany `HaloFlux.exe`. The HaloFlux license and Required Notice apply to the HaloFlux application.

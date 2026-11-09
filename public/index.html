@@ -30,6 +30,28 @@
         <span class="eyebrow mode-note" id="mode-note">SIMULATED SIGNAL · 本地模拟</span>
       </div>
 
+      <div id="desktop-tools" class="desktop-tools" hidden>
+        <p id="desktop-close-note"></p>
+        <button id="desktop-overlay-toggle" type="button">显示 / 隐藏悬浮光环</button>
+        <details id="desktop-settings" class="settings">
+          <summary>桌面设置</summary>
+          <div class="desktop-preferences">
+            <label>启动尺寸 <select data-preference="startupSize"><option value="remember">上次窗口大小</option><option value="standard">标准</option><option value="compact">紧凑</option></select></label>
+            <label>关闭主窗口 <select data-preference="close"><option value="exit">退出应用</option><option value="tray">最小化到托盘</option></select></label>
+            <label>悬浮窗置顶 <input type="checkbox" data-preference="alwaysOnTop"></label>
+            <label>悬浮窗透明度 <input type="range" data-preference="opacity" min="25" max="100" step="5"></label>
+            <label>悬浮窗帧率 <select data-preference="overlayFps"><option value="20">20 FPS</option><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label>
+            <label>悬浮自动质量 <input type="checkbox" data-preference="overlayAutoQuality"></label>
+            <label>完成动画 <input type="checkbox" data-preference="completionAnimation"></label>
+            <label>桌面通知 <input type="checkbox" data-preference="notifications"></label>
+            <label>任务完成 <input type="checkbox" data-preference="notifyCompleted"></label>
+            <label>等待审批 <input type="checkbox" data-preference="notifyApproval"></label>
+            <label>任务失败 <input type="checkbox" data-preference="notifyFailed"></label>
+            <label>连接异常 <input type="checkbox" data-preference="notifyConnection"></label>
+          </div>
+          <p>主窗口帧率、自动质量和配色在下方渲染设置中调整。窗口移动和大小自动保存。</p>
+        </details>
+      </div>
       <div class="grid">
         <section class="visual" aria-label="HaloFlux 状态画布" data-state="idle">
           <iframe title="HaloFlux 光环画布" id="renderer" allow="fullscreen"></iframe>
