@@ -16,6 +16,7 @@ const profile = join(root, 'profile');
 const system = join(process.env.SystemRoot, 'System32');
 const powershell = join(system, 'WindowsPowerShell/v1.0/powershell.exe');
 const exe = join(target, 'HaloFlux.exe');
+const profileArgument = '--user-data-dir=' + profile;
 const env = { ...process.env, PATH: system, APPDATA: profile, LOCALAPPDATA: profile, CODEX_HOME: profile };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.NODE_OPTIONS;
@@ -81,7 +82,8 @@ try {
   assert.equal(existsSync(join(target, 'resources/app/node_modules')), false);
   assert.equal(existsSync(join(target, 'codex.exe')), false);
   for (let round = 0; round < 3; round++) {
-    const instance = launch(exe, round === 0 ? [] : ['--workspace', target], { env, windowsHide: false });
+    const args = round === 0 ? [profileArgument] : ['--workspace', target, profileArgument];
+    const instance = launch(exe, args, { env, windowsHide: false });
     const pid = instance.child.pid;
     const observed = new Map();
     const observe = async () => {
@@ -93,7 +95,7 @@ try {
         'HaloFlux for Codex', 'native window');
       const origin = await until(async () => originFor(await observe()), 'owned private bridge');
       if (round === 0) {
-        const duplicate = launch(exe, ['--workspace', target], { env, windowsHide: false });
+        const duplicate = launch(exe, ['--workspace', target, profileArgument], { env, windowsHide: false });
         try {
           const closed = await until(() => Promise.race([duplicate.exited.then(code => ({ code })), delay(100)]),
             'single-instance duplicate');
@@ -117,6 +119,8 @@ try {
       result.launches.push({ ownedProcesses: observed.size, remaining: 0, portReleased: true, unrelatedNodeAlive: true });
     } finally { if (instance.child.exitCode === null) instance.child.kill(); }
   }
+  assert.ok(existsSync(join(profile, 'desktop-preferences.json')), 'Expected preferences in the isolated test profile');
+  result.isolatedProfile = true;
   result.passed = true;
 } catch (error) {
   result.error = error.message;

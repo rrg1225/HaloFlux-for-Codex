@@ -31,7 +31,7 @@ class DesktopFixture extends EventEmitter {
   }
 
   send(message) {
-    if (message.result?.decision === 'decline') this.finish('completed');
+    if (['accept', 'decline'].includes(message.result?.decision)) this.finish('completed');
   }
 
   finish(status) {

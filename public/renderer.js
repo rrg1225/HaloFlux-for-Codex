@@ -31,11 +31,15 @@
   let healthy = 0;
   let reflow;
   let frameId = null;
+  let wake;
+  let releaseTimer;
+  let surfacesReleased = false;
   let paused = false;
   let previousHue;
   const tiers = [1.5, 1.25, 1, .85];
   const originalFrame = frame;
   const originalDraw = drawStage;
+  const originalResize = resizeAll;
   const overlay = document.body?.classList.contains('codex-overlay') === true;
   // The original small charts show demo data. Only the main Canvas runs in the embedded mode.
   drawAdv = drawDiff = drawVal = drawIdx = agentsTick = drawCallout = () => {};
@@ -44,7 +48,13 @@
   // Composed browser scaling can report 1.0000000298 at DPR 1.
   const dprChanged = previous => Math.abs(window.haloFluxDpr(devicePixelRatio) - previous) >= 1e-6;
   window.haloFluxScheduleFrame = () => {
-    if (frameId === null && !document.hidden && !paused) {
+    if (frameId !== null || wake !== undefined || document.hidden || paused) return true;
+    const remaining = nextDraw - performance.now();
+    // Low-cap desktop windows can skip intervening refresh ticks. The paint
+    // itself still runs on rAF and uses the same frame interval measurement.
+    if (settings.desktop && frameCap() <= 30 && remaining > 15) {
+      wake = setTimeout(() => { wake = undefined; window.haloFluxScheduleFrame(); }, remaining - 10);
+    } else {
       frameId = requestAnimationFrame(now => {
         frameId = null;
         frame(now);
@@ -52,6 +62,9 @@
     }
     return true;
   };
+  function frameCap() {
+    return settings.low || state === 'idle' ? Math.min(settings.fps, 20) : settings.fps;
+  }
 
   window.haloFluxCrop = () => settings.composition === 'crop';
   window.haloFluxCompose = () => {
@@ -75,7 +88,22 @@
     clearTimeout(reflow);
     reflow = setTimeout(resizeAll, 120);
   }
+  resizeAll = function () {
+    if (surfacesReleased && (document.hidden || paused)) return;
+    originalResize();
+  };
+  function releaseSurfaces() {
+    releaseTimer = undefined;
+    if (!document.hidden && !paused) return;
+    clearTimeout(reflow);
+    for (const buffer of [stage, webBase, ...webLayers, trailC, farC, glowC, laneC, ...slots.map(slot => slot.c)]) {
+      if (buffer) buffer.width = buffer.height = 0;
+    }
+    surfacesReleased = true;
+  }
   function resetSamples() {
+    clearTimeout(wake);
+    wake = undefined;
     lastDraw = null;
     nextDraw = 0;
     samples = [];
@@ -87,8 +115,17 @@
     if (document.hidden || paused) {
       if (frameId !== null) cancelAnimationFrame(frameId);
       frameId = null;
-    } else if (started) {
-      window.haloFluxScheduleFrame();
+      if (settings.desktop && !overlay && releaseTimer === undefined && !surfacesReleased) {
+        releaseTimer = setTimeout(releaseSurfaces, 15000);
+      }
+    } else {
+      clearTimeout(releaseTimer);
+      releaseTimer = undefined;
+      if (surfacesReleased) {
+        surfacesReleased = false;
+        resizeAll();
+      }
+      if (started) window.haloFluxScheduleFrame();
     }
   }
   document.addEventListener('visibilitychange', syncVisibility);
@@ -106,7 +143,10 @@
         if (settings.autoQuality && !settings.low && state !== 'idle') {
           const previous = quality;
           const previousDpr = window.haloFluxDpr(devicePixelRatio);
-          if (fps < cap * .86 || p95 > 1450 / cap) {
+          // A larger desktop frame budget must not make auto quality downshift
+          // more aggressively than the original dual-window thresholds.
+          const goal = Math.min(cap, settings.qualityTarget ?? cap);
+          if (fps < goal * .86 || p95 > 1450 / goal) {
             quality = Math.min(tiers.length - 1, quality + 1);
             healthy = 0;
           } else if (++healthy >= 5) {
@@ -122,7 +162,7 @@
     lastDraw = now;
   }
   frame = function (now) {
-    const cap = settings.low || state === 'idle' ? Math.min(settings.fps, 20) : settings.fps;
+    const cap = frameCap();
     if (document.hidden || paused || !ready || now < nextDraw - 1) {
       window.haloFluxScheduleFrame();
       return;
@@ -186,7 +226,8 @@
       spin: range(s.spin, 0.15, 1.5), light: range(s.light, 0.2, 1.5),
       beams: range(s.beams, .1, 1.7),
       particles: range(s.particles, 0.15, 1.3), rhythm: range(s.rhythm, 0.25, 1.5),
-      color: s.color, fps: [20, 30, 60].includes(s.fps) ? s.fps : 60,
+      color: s.color, fps: [20, 24, 30, 40, 60].includes(s.fps) ? s.fps : 60, desktop: s.desktop === true,
+      qualityTarget: s.desktop ? range(s.qualityTarget, 20, 60, 60) : undefined,
       zoom: range(s.zoom, .55, 2), haloX: range(s.haloX, -45, 45, 0), haloY: range(s.haloY, -45, 45, 0),
       composition: s.composition === 'crop' ? 'crop' : 'fit', autoQuality: s.autoQuality === true, low: s.low === true,
     };
@@ -204,5 +245,6 @@
     kick ||= pulse !== null && nextPulse !== pulse;
     if (kick && activity === 'file') fileUntil = performance.now() + 550;
     pulse = nextPulse;
+    if (settings.desktop && started) window.haloFluxScheduleFrame();
   });
 })();

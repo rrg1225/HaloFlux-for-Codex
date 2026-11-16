@@ -6,6 +6,7 @@ const bool = value => typeof value === 'boolean';
 export const defaults = Object.freeze({
   close: 'exit', startupSize: 'remember', alwaysOnTop: true, opacity: 85,
   fps: 60, overlayFps: 30, autoQuality: true, overlayAutoQuality: true,
+  budget: 'balanced',
   theme: 'state', completionAnimation: true,
   notifications: true, notifyCompleted: true, notifyApproval: true,
   notifyFailed: true, notifyConnection: true,
@@ -13,6 +14,7 @@ export const defaults = Object.freeze({
 const validators = {
   close: oneOf('exit', 'tray'), startupSize: oneOf('remember', 'standard', 'compact'),
   opacity: range(25, 100), fps: oneOf(20, 30, 60), overlayFps: oneOf(20, 30, 60),
+  budget: oneOf('balanced', 'main', 'overlay', 'power'),
   theme: oneOf('state', 'native', 'cyan', 'violet', 'amber'),
 };
 

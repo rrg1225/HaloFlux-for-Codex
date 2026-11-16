@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { startBackend } from './backend.mjs';
 import { desktopNotifications } from './notifications.mjs';
 import { acceptsPreference, defaults, readPreferences, savePreferences, visibleBounds } from './preferences.mjs';
+import { renderBudget } from './render-budget.mjs';
 import { desktopSession } from './window-security.mjs';
 
 const title = 'HaloFlux for Codex';
@@ -17,6 +18,8 @@ const mainSizes = { standard: { width: 1180, height: 820 }, compact: { width: 84
 const overlaySize = { width: 420, height: 350 };
 const alive = win => win && !win.isDestroyed();
 const visible = win => alive(win) && win.isVisible() && !win.isMinimized();
+const drawable = win => visible(win) && !win.webContents.isCrashed();
+const visualKinds = new Set(['command', 'file', 'tool', 'message', 'network', 'permissions', 'input', 'elicitation']);
 
 function displayBounds(bounds, size, minimum) {
   const area = (bounds ? screen.getDisplayMatching(bounds) : screen.getPrimaryDisplay()).workArea;
@@ -33,6 +36,7 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
   const icon = nativeImage.createFromPath(fileURLToPath(new URL('icon.png', import.meta.url)));
   const preload = fileURLToPath(new URL('preload.cjs', import.meta.url));
   let backend, main, overlay, tray, snapshot, menu;
+  let overlayGeometry;
   let stopping = false;
   let mode = 'demo';
   let clickThrough = false;
@@ -42,36 +46,91 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
   let settingsRequest = 0;
   let traySignature;
   let saveTimer, waitTimer;
+  let closing;
+  let dual = false;
+  const budget = renderBudget();
+  const sent = new WeakMap();
   const handlers = new Set();
   const secured = await desktopSession(() => backend, () => {
     shell.openExternal('https://github.com/Ryder191/haloflux').catch(() => {});
   });
   const notifications = desktopNotifications(preferences, () => visible(main) && main.isFocused() &&
     !main.webContents.isCrashed() && mode === 'live',
-  body => (displayNotice ?? (message => tray?.displayBalloon({ title, content: message })))(body));
+  body => (displayNotice ?? (message => tray?.displayBalloon({ title, content: message })))(
+    fixture ? '模拟 · ' + body : body));
 
   function persist() {
     try { savePreferences(file, preferences); } catch { /* The session can run with in-memory preferences. */ }
+  }
+  function overlayBounds(win) {
+    const actual = win.getBounds();
+    const { requested, applied } = overlayGeometry;
+    // Windows can round a frameless window's native bounds at fractional DPI.
+    // Save the requested size and the movement since that size was applied.
+    return { ...requested, x: requested.x + actual.x - applied.x, y: requested.y + actual.y - applied.y };
+  }
+  function setOverlayBounds(win, bounds) {
+    win.setBounds(bounds);
+    overlayGeometry = { requested: bounds, applied: win.getBounds() };
+    remember(win, 'visual');
+  }
+  function pinOverlay(win) {
+    // On Windows the floating level can leave a transparent window behind the main window.
+    win.setAlwaysOnTop(preferences.alwaysOnTop, 'pop-up-menu');
   }
   function remember(win, role) {
     if (!alive(win) || win.isMinimized()) return;
     if (role === 'control') {
       preferences.mainBounds = win.getNormalBounds();
       preferences.maximized = win.isMaximized();
-    } else preferences.overlayBounds = win.getBounds();
+    } else preferences.overlayBounds = overlayBounds(win);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(persist, 240);
   }
   function state(win) {
+    const mainVisible = drawable(main);
+    const overlayVisible = drawable(overlay);
+    const both = mainVisible && overlayVisible && !sleeping && !stopping;
+    const caps = budget.limits(preferences, both, mainVisible && main.isFocused());
+    const lifecycle = {
+      main: alive(main) && main.isMinimized() ? 'MAIN_MINIMIZED' : mainVisible ? 'MAIN_VISIBLE' : 'MAIN_HIDDEN',
+      overlay: overlayVisible ? 'OVERLAY_VISIBLE' : 'OVERLAY_HIDDEN',
+      application: stopping ? 'APPLICATION_EXITING' : both ? 'MAIN_AND_OVERLAY_VISIBLE' :
+        mainVisible || overlayVisible ? 'APPLICATION_VISIBLE' : 'TRAY_ONLY',
+    };
+    const paused = stopping || sleeping || !drawable(win);
+    if (win === overlay) {
+      const signal = backend?.origin && snapshot?.[mode];
+      return {
+        mode, paused, lifecycle, fps: caps.overlay, clickThrough, online: !!backend?.origin,
+        visual: { theme: preferences.theme, autoQuality: preferences.overlayAutoQuality,
+          completionAnimation: preferences.completionAnimation },
+        signal: {
+          state: Object.hasOwn(labels, signal?.state) ? signal.state : 'idle',
+          connected: ['connected', 'resume_failed'].includes(signal?.connection),
+          pulse: Number.isSafeInteger(signal?.pulse) ? signal.pulse : 0,
+          activity: visualKinds.has(signal?.activity) ? signal.activity : null,
+          activeKind: visualKinds.has(signal?.activeKind) ? signal.activeKind : null,
+        },
+      };
+    }
     return {
-      mode, paused: sleeping || !visible(win), sharedDrawing: visible(main) && visible(overlay),
-      clickThrough, settingsRequest,
+      mode, paused, lifecycle, fps: caps.main, settingsRequest,
       preferences: Object.fromEntries(Object.keys(defaults).map(key => [key, preferences[key]])),
     };
   }
   function updateWindows() {
+    const nextDual = drawable(main) && drawable(overlay) && !sleeping && !stopping;
+    if (dual !== nextDual) budget.reset();
+    dual = nextDual;
     for (const win of [main, overlay]) {
-      if (alive(win) && !win.webContents.isCrashed()) win.webContents.send('halo:state', state(win));
+      if (!alive(win) || win.webContents.isCrashed()) continue;
+      const next = state(win);
+      const signature = JSON.stringify(next);
+      if (sent.get(win) !== signature) {
+        sent.set(win, signature);
+        win.webContents.send('halo:state', next);
+      }
     }
   }
   function switchMode(next) {
@@ -121,6 +180,11 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
         click: () => void toggleOverlay() },
       { id: 'passthrough', label: '悬浮窗点击穿透', type: 'checkbox', checked: clickThrough,
         enabled: alive(overlay) === true, click: item => setClickThrough(item.checked) },
+      { id: 'reset-overlay', label: '复位悬浮窗位置', enabled: alive(overlay) === true, click: () => {
+        if (!alive(overlay)) return;
+        setOverlayBounds(overlay, displayBounds(undefined, overlaySize, overlayMinimum));
+        setClickThrough(false);
+      } },
       { id: 'settings', label: '打开桌面设置', click: () => openMain(true) },
       { type: 'separator' },
       { id: 'quit', label: waiting ? '取消等待退出' : '退出应用', click: () => {
@@ -135,11 +199,18 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
     for (const event of ['move', 'resize', 'maximize', 'unmaximize']) {
       win.on(event, () => remember(win, role));
     }
-    for (const event of ['show', 'hide', 'minimize', 'restore']) win.on(event, updateWindows);
+    for (const event of ['show', 'hide', 'minimize', 'restore', 'focus', 'blur']) win.on(event, updateWindows);
+    win.webContents.on('did-finish-load', () => {
+      sent.delete(win);
+      updateWindows();
+    });
     win.webContents.on('render-process-gone', () => {
       if (stopping) return;
       if (role === 'visual') win.destroy();
-      else showError('主界面进程已断开。请从托盘打开 HaloFlux 恢复界面。');
+      else {
+        updateWindows();
+        showError('主界面进程已断开。请从托盘打开 HaloFlux 恢复界面。');
+      }
     });
   }
   function hideOverlay() {
@@ -150,23 +221,31 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
   async function toggleOverlay() {
     if (alive(overlay)) { hideOverlay(); return; }
     if (stopping || !backend?.origin) return;
+    const bounds = displayBounds(preferences.overlayBounds, overlaySize, overlayMinimum);
     const win = overlay = new BrowserWindow({
-      ...displayBounds(preferences.overlayBounds, overlaySize, overlayMinimum),
+      ...bounds,
       title: 'HaloFlux 光环', icon, transparent: true, backgroundColor: '#00000000',
       frame: false, resizable: false, hasShadow: false, skipTaskbar: true, show: false,
-      alwaysOnTop: preferences.alwaysOnTop, opacity: preferences.opacity / 100,
-      webPreferences: { ...secured.preferences, preload },
+      opacity: preferences.opacity / 100,
+      webPreferences: { ...secured.preferences, preload, additionalArguments: ['--haloflux-visual'] },
     });
+    overlayGeometry = { requested: bounds, applied: win.getBounds() };
     attach(win, 'visual');
     win.on('closed', () => {
       overlay = undefined;
+      overlayGeometry = undefined;
       clickThrough = false;
       updateWindows();
       updateTray();
     });
     try {
       await win.loadURL(backend.origin + '/desktop-overlay');
-      if (alive(win)) win.showInactive();
+      if (alive(win)) {
+        win.showInactive();
+        pinOverlay(win);
+        overlayGeometry = { requested: bounds, applied: win.getBounds() };
+        remember(win, 'visual');
+      }
     } catch {
       if (!alive(win)) return;
       win.destroy();
@@ -188,23 +267,29 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
   }
   function installIpc() {
     register('halo:read', 'either', win => state(win));
+    register('halo:frame-sample', 'control', (_win, fps, p95) => {
+      if (!dual || preferences.budget !== 'balanced' ||
+        ![fps, p95].every(value => Number.isFinite(value) && value > 0) || fps > 120) return false;
+      if (budget.measure({ fps, p95 }, preferences.fps, performance.now())) updateWindows();
+      return true;
+    });
     register('halo:mode', 'control', (_win, next) => switchMode(next));
     register('halo:overlay', 'control', () => toggleOverlay());
     register('halo:hide-overlay', 'visual', hideOverlay);
     register('halo:resize-overlay', 'visual', (win, width, height) => {
       if (![width, height].every(Number.isInteger) || clickThrough) return false;
-      const bounds = { ...win.getBounds(), width, height };
+      const bounds = { ...overlayBounds(win), width, height };
       const area = screen.getDisplayMatching(win.getBounds()).workArea;
-      win.setBounds(visibleBounds(bounds, area, overlaySize, overlayMinimum));
-      remember(win, 'visual');
+      setOverlayBounds(win, visibleBounds(bounds, area, overlaySize, overlayMinimum));
       return true;
     });
     register('halo:preference', 'control', (_win, key, value) => {
       if (!acceptsPreference(key, value)) return false;
+      if (key === 'budget' && preferences[key] !== value) budget.reset();
       preferences[key] = value;
       if (alive(overlay)) {
-        overlay.setAlwaysOnTop(preferences.alwaysOnTop);
-        overlay.setOpacity(preferences.opacity / 100);
+        if (key === 'opacity') overlay.setOpacity(value / 100);
+        if (key === 'opacity' || key === 'alwaysOnTop') pinOverlay(overlay);
       }
       persist();
       updateWindows();
@@ -214,18 +299,22 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
   function reflow() {
     for (const [win, size, minimum] of [[main, mainSizes.standard, mainMinimum], [overlay, overlaySize, overlayMinimum]]) {
       if (alive(win) && !win.isMaximized() && !win.isMinimized()) {
-        const previous = win.getBounds();
+        const previous = win === overlay ? overlayBounds(win) : win.getBounds();
         const next = displayBounds(previous, size, minimum);
-        if (Object.keys(next).some(key => previous[key] !== next[key])) win.setBounds(next);
+        if (Object.keys(next).some(key => previous[key] !== next[key])) {
+          if (win === overlay) setOverlayBounds(win, next);
+          else win.setBounds(next);
+        }
       }
     }
   }
   const onSuspend = () => { sleeping = true; updateWindows(); };
   const onResume = () => { sleeping = false; reflow(); updateWindows(); };
   const beforeQuit = event => { if (!stopping) { event.preventDefault(); void requestExit(); } };
-  async function cleanup() {
-    if (stopping) return;
+  function cleanup() {
+    if (closing) return closing;
     stopping = true;
+    updateWindows();
     remember(main, 'control');
     remember(overlay, 'visual');
     clearTimeout(saveTimer);
@@ -241,8 +330,8 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
     tray?.destroy();
     if (alive(overlay)) overlay.destroy();
     if (alive(main)) main.destroy();
-    await backend?.close();
-    backend = undefined;
+    closing = Promise.resolve(backend?.close()).finally(() => { backend = undefined; });
+    return closing;
   }
   async function finishExit() {
     await cleanup();
@@ -301,11 +390,13 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
         if (stopping) return;
         snapshot = update;
         notifications.observe(update.live, notices);
+        updateWindows();
         updateTray();
       },
       onExit() {
         if (stopping) return;
         void cancelWait();
+        updateWindows();
         updateTray();
         notifications.disconnected();
         showError('本地桥接意外断开，任务终态可能未知。请退出并重新打开 HaloFlux。');

@@ -23,8 +23,10 @@ export async function desktopSession(currentBackend, openOriginal) {
     if (role === 'control' && url.protocol === 'blob:' && backend?.origin && url.origin === backend.origin) {
       return { role, backend, url, localBlob: true };
     }
-    if (!role || !backend?.origin || url.origin !== backend.origin ||
+    if (!role || !backend?.origin || url.protocol !== 'http:' || url.origin !== backend.origin ||
       !(role === 'control' ? paths.has(url.pathname) : paths.includes(url.pathname))) return;
+    if (url.pathname === '/api/action' && (details.method !== 'POST' ||
+      details.frame?.parent !== null || details.frame.url !== backend.origin + '/')) return;
     return { role, backend, url };
   }
   isolated.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !authorize(details) }));

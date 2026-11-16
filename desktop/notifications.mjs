@@ -4,9 +4,11 @@ const messages = {
   notifyFailed: 'Codex 任务执行失败。',
   notifyConnection: 'Codex 或本地桥接连接异常。请打开 HaloFlux 检查。',
 };
+const cooldown = { notifyCompleted: 4000, notifyApproval: 3000, notifyFailed: 4000, notifyConnection: 15000 };
 
-export function desktopNotifications(preferences, isViewingLive, display) {
+export function desktopNotifications(preferences, isViewingLive, display, clock = () => performance.now()) {
   const seen = new Set();
+  const lastShown = new Map();
   let previous;
   let lost = false;
   function send(category, key) {
@@ -15,7 +17,11 @@ export function desktopNotifications(preferences, isViewingLive, display) {
       if (seen.size >= 256) seen.delete(seen.values().next().value);
       seen.add(key);
     }
-    if (preferences.notifications && preferences[category] && !isViewingLive()) display(messages[category]);
+    if (!preferences.notifications || !preferences[category] || isViewingLive()) return;
+    const now = clock();
+    if (now - (lastShown.get(category) ?? -Infinity) < cooldown[category]) return;
+    lastShown.set(category, now);
+    display(messages[category]);
   }
   function disconnected() {
     if (!lost) send('notifyConnection');

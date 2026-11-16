@@ -32,12 +32,13 @@
 
       <div id="desktop-tools" class="desktop-tools" hidden>
         <p id="desktop-close-note"></p>
-        <button id="desktop-overlay-toggle" type="button">显示 / 隐藏悬浮光环</button>
+        <button id="desktop-overlay-toggle" type="button">显示悬浮光环</button>
         <details id="desktop-settings" class="settings">
           <summary>桌面设置</summary>
           <div class="desktop-preferences">
             <label>启动尺寸 <select data-preference="startupSize"><option value="remember">上次窗口大小</option><option value="standard">标准</option><option value="compact">紧凑</option></select></label>
             <label>关闭主窗口 <select data-preference="close"><option value="exit">退出应用</option><option value="tray">最小化到托盘</option></select></label>
+            <label>双窗渲染预算 <select data-preference="budget"><option value="balanced">均衡</option><option value="main">主窗优先</option><option value="overlay">悬浮窗优先</option><option value="power">省电</option></select></label>
             <label>悬浮窗置顶 <input type="checkbox" data-preference="alwaysOnTop"></label>
             <label>悬浮窗透明度 <input type="range" data-preference="opacity" min="25" max="100" step="5"></label>
             <label>悬浮窗帧率 <select data-preference="overlayFps"><option value="20">20 FPS</option><option value="30">30 FPS</option><option value="60">60 FPS</option></select></label>
@@ -49,7 +50,7 @@
             <label>任务失败 <input type="checkbox" data-preference="notifyFailed"></label>
             <label>连接异常 <input type="checkbox" data-preference="notifyConnection"></label>
           </div>
-          <p>主窗口帧率、自动质量和配色在下方渲染设置中调整。窗口移动和大小自动保存。</p>
+          <p>预算只控制动画帧率。主窗口帧率上限、自动质量和配色可在下方渲染设置中调整。</p>
         </details>
       </div>
       <div class="grid">

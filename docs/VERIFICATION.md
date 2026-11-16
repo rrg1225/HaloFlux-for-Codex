@@ -1,21 +1,67 @@
-# HaloFlux for Codex v0.4.0-alpha.1 验收
+# HaloFlux for Codex v0.4.0-beta.1 验收
 
-2026-11-09（UTC+8）。Windows 11 25H2（26200），Windows x64。Electron 45.2.3、Chromium 156.0.8078.80、随包 Node 24.22.2。桌面与浏览器分别验收。 [基线验收](VERIFICATION-v0.3.3.md)
+交付复验于 2026-11-11（UTC+8）在 Windows 11 25H2 x64 上进行。Electron 45.2.3、Chromium 156.0.8078.80、随包 Node 24.22.2。基线是 `feature/desktop-v040-beta1` 分支起点 `6e17909`，与本地 `v0.4.0-alpha.1` 一致。
 
-| Gate | 状态 | 证据 |
+2026-11-16 收尾时有 29 个已跟踪修改及 4 个未跟踪文件。`runtime-topfix.sha256` 中的应用与测试夹具均与收尾时的工作区匹配，因此沿用 2026-11-11 的运行时验收。收尾时的源清单检查通过 106 个发布路径、11 个原版文件的哈希及许可证、署名、语法和凭据模式检查。历史 Alpha 验收和代码保存在 `v0.4.0-alpha.1` 标签。
+
+## 测试记录
+
+应用与夹具的 SHA-256 清单保存在工作区 `output/desktop/beta1/delivery-20261111`。置顶修复前的 `runtime-and-fixtures.sha256` 摘要为 `ae588707717a5414f0807b98aebff0bfb58169c539a258e0a9f66318c55de0d2`，修复后的 `runtime-topfix.sha256` 摘要为 `3936b899324ac7bb759c2685969c11f1c15c0ec3ab6f60bb66497d7b6693115e`。日期未单列时为 2026-11-11，时间均为 UTC+8。
+
+| 项目 | 状态 | 证据 |
 | --- | --- | --- |
-| A · 桌面启动 | VERIFIED | Windows 可见窗口加载既有 UI 并提交 Canvas。utility process 先取得操作系统分配的回环端口。 |
-| B · 原有能力 | VERIFIED / MOCK VERIFIED | Node 22、24 各 23 项离线测试。有头 Edge 冒烟、双标签 12 次刷新、24 次切换和 120 秒驻留通过。安装的 0.162.0 完成核心 Schema、审批响应能力核对及隔离握手。命令与文件审批使用夹具。模型调用为零。 |
-| C · 托盘与退出 | VERIFIED / MOCK VERIFIED | 设置、关闭到托盘、恢复窗口与退出通过。Mock 活动轮次验证继续后台、等待、取消等待及明确中断后退出。 |
-| D · 悬浮窗 | VERIFIED / MOCK VERIFIED | Electron 透明 Canvas 像素、窗口拖动区域、DPI 缩放、置顶、透明度、点击穿透及托盘恢复经过探针。共享 Mock 实时状态。 |
-| E · 安全 | VERIFIED | renderer 隔离、请求角色、令牌不进入桌面 HTML、IPC 校验、导航和新窗口限制通过。构建检查原始哈希、许可证与凭据模式。 |
-| F · 性能 | VERIFIED（当前机器短测） | 主窗、双窗、悬浮窗、托盘、DPR 1.5 与两种原生客户区大小均完成 Electron 采样。双窗成本和显存相关待测项记录在报告。 |
-| G · 便携发布 | VERIFIED | 138 个条目逐项核对，ZIP 与侧车一致，中文空格目录连续三轮启动和关闭成功。单实例锁生效，本次所属进程归零，外部 Node 仍存活。浏览器 ZIP 独立保留。 |
+| Node.js v22.13.1 和 v24.13.0 | VERIFIED / MOCK VERIFIED | 15:11 首测和 16:16 置顶修复后复测，两个运行时均通过 26 项。包括桥接、SSE 重连、协议和模拟审批。 |
+| 已安装 CLI 0.162.0 | VERIFIED | 15:12:43–15:12:45，通过 Schema、审批响应能力检查、隔离 App Server 握手和关停，模型调用为 0。 |
+| 150% DPI 原生窗口 | VERIFIED / MOCK VERIFIED | 最终代码 16:13:06–16:13:18。连续 20 次重开与独立进程重启，置顶、几何、双窗状态与唯一 SSE 均经断言。移动使用 `setPosition()`，缩放使用产品 IPC。 |
+| 100% 与 125% DPI | VERIFIED（置顶修复前原生） / MOCK VERIFIED（最终代码） | Windows 原生两档均曾完成 20 次重开及重启。最终复验的系统设置操作受桌面输入打断，使用 Electron 的进程级缩放覆盖补测两档。 |
+| 桌面生命周期与审批 | VERIFIED / MOCK VERIFIED | 最终代码 16:48:55–16:49:51。隔离、透明像素、点击穿透恢复、托盘、活动任务退出、桥接异常和双 Renderer 崩溃恢复通过。同一 Mock 审批票据恢复后第一次决定成功，重复提交被拒，SSE 为一条。 |
+| 桌面 CLI 握手与 Windows 通知 | VERIFIED / MOCK VERIFIED | 最终代码 16:49:51–16:50:02。隔离无模型 App Server 握手，主窗关闭释放所属 CLI、worker 和监听。另一次测试由 Windows 托盘报告呈现标记为“模拟”的完成通知。 |
+| Edge 157.0.4341.46 | VERIFIED / MOCK VERIFIED | 15:53:04–15:56:34，无头冒烟、SSE 重连、模拟审批、双标签 12 次刷新、24 次切换与 120 秒驻留。所属 Edge 进程清理。 |
+| Edge 独立原生窗口可见性 | FAILED | 15:58 后的原生后台探针将一个窗口最小化后，两个文档均报告 `hidden`，前窗可见性断言超时。该回归的原因待查。 |
+| 尺寸匹配的多窗口矩阵 | VERIFIED | 2026-11-09 18:49–18:55，修复后的 50 个常规样本和 3 个独立 trace 完整写入。主窗固定客户区 1280 × 720 DIP，悬浮窗固定 420 × 350 DIP。 |
+| DPI 修复后的 30 分钟耐久 | VERIFIED / MOCK VERIFIED | 15:19–15:49，1810.8 秒、72 轮、216 个样本。每个样本一条 SSE，持有的 Mock 轮次连续，悬浮窗重开稳定，托盘释放缓冲。75 个观测 PID 和回环监听已清理。此轮早于置顶修复。 |
+| 最终代码 30 分钟耐久 | VERIFIED / MOCK VERIFIED | 16:13–16:43，1821.7 秒、72 轮、216 个样本。始终一条 SSE，Mock 任务连续，尺寸稳定，托盘释放缓冲，77 个观测 PID 和端口清理。 |
+| 连续流畅性 | VERIFIED（最终采样） | 最终长测最大 409.7 ms。置顶修复前曾捕捉到 5.35 秒与 4.16 秒绘制间隔，原因未确认。固定画质 FPS 仍为 FAILED。 |
+| 固定画质 FPS 优化目标 | FAILED | 最终矩阵双窗中位数 11.34 / 11.31 FPS，暂停悬浮绘制后主窗回到 21.02 FPS。最终四档预算约 11.6–12.5 FPS。此前矩阵与预算样本保留在性能报告。 |
+| 原版完整性与署名 | VERIFIED | 11 个原版文件通过 SHA-256；原版权限条款、Required Notice、Ryder191、Li Xian（李显）与第三方许可证保留。 |
+| 普通 Windows 沙箱 Error 32 | UPSTREAM_BLOCKED | 引用已安装 CLI 0.162.0 的历史执行记录。此次仅复验协议和无模型握手。 |
+| 候选 Codex CLI 0.163.0 | BLOCKED_BY_APPROVAL | 下载和执行待授权，兼容性待实测。 |
+| 真实模型、审批与任务退出 | NOT TESTED | 模拟场景与隔离握手是此次验收范围。 |
+| 物理休眠与混合 DPI 多显示器 | NOT TESTED | 测试注入了 suspend/resume 事件。实际休眠、多显示器、Windows ARM64 和其他 Windows 版本仍待覆盖。 |
 
-通知为 **MOCK VERIFIED**。审批、完成和失败经过固定文案检查，Windows 托盘报告一次 Mock 完成通知已呈现。系统通知策略可能改变实际呈现。
+## DPI 证据
 
-普通 Windows 沙箱 Error 32 为 **UPSTREAM_BLOCKED**，依据 v0.3.3 兼容报告中的历史实测。候选 CLI 0.163.0 的下载与执行为 **BLOCKED_BY_APPROVAL**。真实模型任务、真实审批、真实任务退出以及实际系统休眠为 **NOT TESTED**。 [沙箱边界](SANDBOX.md)
+历史缺陷在 150% 下将 422 DIP 的宽度累积到 726 DIP。Beta 记录请求尺寸与原生位置变化。下列各档均通过 20 次重开与独立进程重启，所有测试的保存请求尺寸均为 471 × 383 DIP。原生设置复验后，Windows 缩放确认为 150%。
 
-原版 11 个文件按基线 SHA-256 校验。原版作者 Ryder191、Codex 集成和新增开发者 Li Xian（李显）、PolyForm Noncommercial 1.0.0、Required Notice 以及 Electron 和 Chromium 许可证均保留。
+| Windows 缩放 | 时间 UTC+8 | DSF / DPR | 保存与读回位置 DIP | 外窗读回 DIP | `dipToScreenRect` px | Canvas 后备 px |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100% 原生，置顶修复前 | 15:56:36–15:56:48 | 1 / 1 | `(2020, 64)` | 471 × 383 | 471 × 383 | 471 × 383 |
+| 125% 原生，置顶修复前 | 15:57:13–15:57:25 | 1.25 / 1.25 | `(1508, 64)` | 472 × 384 | 590 × 480 | 590 × 480 |
+| 150% 原生，最终 | 16:13:06–16:13:18 | 1.5 / 1.5 | `(1167, 64)` | 475 × 386 | 713 × 579 | 711 × 579 |
+| 100% 进程缩放覆盖，最终 | 16:51:46–16:51:59 | 1 / 1 | `(2020, 64)` | 471 × 383 | 471 × 383 | 471 × 383 |
+| 125% 进程缩放覆盖，最终 | 16:52:12–16:52:23 | 1.25 / 1.25 | `(1508, 64)` | 472 × 387 | 590 × 484 | 590 × 484 |
 
-[架构与准入](DESKTOP-ADR.md) · [桌面使用与已知问题](DESKTOP-WINDOWS.md) · [进程清理](DESKTOP-PROCESSES.md) · [安全审查](DESKTOP-SECURITY.md) · [性能数据](DESKTOP-PERFORMANCE.md)
+较早的两次补测分别在位置跳变和主窗不可见时停止。两次失败样本已保留。后续 20 次连续重开以同一位置完成，位置异常的来源仍未确认。
+
+## 原生置顶回归
+
+置顶修复前，解包验收发现默认悬浮窗已创建但被主窗遮挡。Canvas 自身能绘制，Windows 原生窗口命中仍落到主窗。隔离对照在同一 Electron 上测了原默认层级、去掉原生透明度参数、普通显示、重新应用默认层级和 `pop-up-menu`。只有最后一种在重叠区域获得原生窗口命中并显示置顶标志。Beta 在悬浮窗显示后应用该层级，也在用户修改透明度时重应用置顶设置。关闭置顶继续回到普通窗口层级。 [Electron 置顶层级](https://www.electronjs.org/docs/latest/api/base-window#winsetalwaysontopflag-level-relativelevel)
+
+早期解包探针的环境变量没有覆盖 Electron 的 Windows 用户目录路径，启动时为 HaloFlux 创建了默认目录。最终解包探针传入独立 `--user-data-dir`，并检查偏好实际写入测试目录。 [打包探针](../scripts/test-desktop-package.mjs)
+
+## Windows 发行物
+
+桌面 ZIP 为 `HaloFlux-for-Codex-v0.4.0-beta.1-windows-x64-desktop.zip`，浏览器 ZIP 为 `HaloFlux-for-Codex-v0.4.0-beta.1-windows.zip`。每份 ZIP 对应同名 `.sha256`。桌面为未签名 x64 便携包。2026-11-16 的构建日志、哈希对照和最终 ZIP 解包记录见工作区 `output/desktop/beta1/final-20261116/`。2026-11-11 的归档记录保存在原有交付目录。Alpha 发行物与标签可用于回退。 [桌面启动](DESKTOP-WINDOWS.md) · [浏览器启动](WINDOWS.md)
+
+## v0.5.0 准入
+
+| 维度 | 评估 |
+| --- | --- |
+| 桌面工程成熟度 | Windows x64 单显示器条件下，便携包、150% 原生 DPI、托盘与进程生命周期具备 Beta 交付条件。100% 和 125% 最终原生复验、真实多显示器和休眠待测。 |
+| 双窗口性能 | **FAILED**。最终固定双窗约 11–13 FPS，未达优化目标。最终长测未再出现秒级绘制间隔，历史样本仍保留。 |
+| 安全与稳定性 | 回环与 IPC 权限、模拟审批、缓冲释放、进程清理和崩溃恢复已验证。未签名包依赖来源及 SHA-256 核对。新的 Electron 补丁需单独验收。 |
+| Codex 上游兼容性 | 0.162.0 协议与握手通过。普通 Windows 沙箱为 **UPSTREAM_BLOCKED**，候选 CLI 为 **BLOCKED_BY_APPROVAL**，真实模型与审批为 **NOT TESTED**。 |
+
+整体暂缓 v0.5.0 准入，优先处理双窗长帧和秒级间隔，补齐 Windows 沙箱兼容性实测。
+
+[使用说明](DESKTOP-WINDOWS.md) · [性能报告](DESKTOP-PERFORMANCE.md) · [耐久测试](DESKTOP-SOAK.md) · [进程与资源](DESKTOP-PROCESSES.md) · [安全审查](DESKTOP-SECURITY.md) · [沙箱兼容性](SANDBOX.md)

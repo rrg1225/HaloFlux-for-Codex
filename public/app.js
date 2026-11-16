@@ -86,10 +86,11 @@ function applySettings() {
 
 function sendFrame() {
   const { state, activity, activeKind, pulse } = online ? data?.[mode] ?? fallback : fallback;
-  const fps = desktopState?.sharedDrawing && settings.autoQuality ? Math.min(settings.fps, 30) : settings.fps;
+  const fps = desktopState?.fps ?? settings.fps;
+  const dual = desktopState?.lifecycle.application === 'MAIN_AND_OVERLAY_VISIBLE';
   frame.contentWindow?.postMessage({
     type: 'haloflux-frame', state, activity, activeKind, pulse: mode + '/' + pulse,
-    paused: desktopState?.paused === true, settings: { ...settings, fps,
+    paused: desktopState?.paused === true, settings: { ...settings, fps, desktop: !!desktop, qualityTarget: dual ? 30 : fps,
       completionAnimation: desktopState?.preferences.completionAnimation },
   }, location.origin);
 }
@@ -101,6 +102,10 @@ window.addEventListener('message', event => {
   if (![fps, p95, cap].every(Number.isFinite)) return;
   $('performance').dataset.sample = JSON.stringify({ fps, p95, cap });
   text('performance', '绘制 ' + fps.toFixed(1) + ' FPS · 间隔 P95 ' + p95.toFixed(1) + ' ms · 上限 ' + cap);
+  if (desktopState?.lifecycle.application === 'MAIN_AND_OVERLAY_VISIBLE' &&
+    desktopState.preferences.budget === 'balanced' && cap >= 30) {
+    desktop.frameSample(fps, p95).catch(() => {});
+  }
 });
 
 function text(id, value) {
@@ -471,6 +476,7 @@ if (desktop) {
     }
     text('desktop-close-note', prefs.close === 'tray' ? '关闭主窗口会保留托盘与后台任务。' :
       '关闭主窗口会退出应用。真实任务运行时会先询问。');
+    text('desktop-overlay-toggle', next.lifecycle.overlay === 'OVERLAY_VISIBLE' ? '隐藏悬浮光环' : '显示悬浮光环');
     $('desktop-tools').hidden = false;
     if (openSettings) {
       $('desktop-settings').open = true;

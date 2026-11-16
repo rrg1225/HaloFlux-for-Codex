@@ -1,6 +1,6 @@
 {
   "name": "haloflux-for-codex",
-  "version": "0.4.0-alpha.1",
+  "version": "0.4.0-beta.1",
   "type": "module",
   "main": "desktop/entry.mjs",
   "private": true,

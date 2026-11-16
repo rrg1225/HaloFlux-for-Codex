@@ -16,11 +16,15 @@
 
 浏览器测试使用已安装的 Playwright。将 `HALOFLUX_PLAYWRIGHT` 指向 `playwright/index.mjs`，设置 `HALOFLUX_EDGE_HEADED=1`，可用 `HALOFLUX_EDGE_OUTPUT` 指定报告目录。每轮严格双标签测试固定 12 次刷新、24 次模式切换和 120 秒驻留。`test:edge:background` 使用独立原生 Edge 窗口验证隐藏和恢复。性能复测与浏览器回归串行运行。 [性能复测](PERFORMANCE.md)
 
-## Windows 桌面 Alpha
+## Windows 桌面 Beta
 
 用已校验并解压的 Electron 运行 `scripts/test-desktop.cjs`。默认用 Mock 轮次覆盖有头窗口、托盘、透明 Canvas、退出与性能。传入 `--handshake` 仅使用已安装的 CLI 做隔离的无模型握手。传入 `--balloon` 通过 Windows 托盘发送一个固定文案的 Mock 完成通知，并等待 Windows 的呈现事件。运行时可用 `HALOFLUX_DESKTOP_OUTPUT` 指定 JSON 和截图目录。
 
+传入 `--dpi` 可单独验证移动与缩放后的 20 次悬浮窗重开。为重启验收，先将 `HALOFLUX_TEST_PROFILE` 指向新建的空测试目录，设置 `HALOFLUX_DESKTOP_OUTPUT`，运行 `--dpi`。再用相同的测试目录与输出目录启动独立进程并传入 `--dpi-restart`。每个进程只使用一个模式。报告保存请求 DIP、原生读回 DIP、DPI 比例、DIP 到屏幕像素转换及 Canvas 实际后备尺寸。
+
 用 `node scripts/test-desktop-package.mjs <desktop.zip>` 复验发行物。脚本核对侧车、从中文空格目录启动已解压 EXE、验证单实例并核对退出进程和端口。 [桌面进程](DESKTOP-PROCESSES.md) · [桌面性能](DESKTOP-PERFORMANCE.md)
+
+同一 Electron 可运行 `scripts/desktop-observe.cjs`。默认执行五轮窗口矩阵，再单独录 Chromium trace。`--matched` 复测单窗、双窗、暂停悬浮绘制、最小化和托盘对照，`--budgets` 比较固定画质下的四种双窗预算。`--soak` 执行至少 1800 秒的 Mock 窗口与桥接循环。每次采样写入 JSON，可用 `HALOFLUX_DESKTOP_OUTPUT` 指定目录。可用 `HALOFLUX_DESKTOP_SOURCE` 指向从 Alpha 标签解出的独立源目录。为便于复测，采样期间保持窗口尺寸、缩放、显示器与任务夹具一致。 [稳定性报告](DESKTOP-SOAK.md)
 
 ## 测试可信度
 

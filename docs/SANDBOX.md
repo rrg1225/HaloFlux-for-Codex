@@ -1,5 +1,9 @@
 # Windows 沙箱兼容性
 
+## v0.4.0-beta.1
+
+已安装的 0.162.0 通过 Beta 的 Schema 检查与无模型握手。普通 Windows 沙箱 Error 32 仍按历史复现记录归为 **UPSTREAM_BLOCKED**。候选 0.163.0 实机为 **BLOCKED_BY_APPROVAL**。真实模型轮次和真实审批为 **NOT TESTED**。 [Beta 验收](VERIFICATION.md) · [上游 ACL 修复](https://github.com/openai/codex/pull/51822)
+
 ## v0.3.3-rc.1 当前结果
 
 本机默认 CLI 仍是 0.162.0。`npm.cmd run check:protocol` 通过本机生成的 Schema。`npm.cmd run check:cli` 在空的临时 `CODEX_HOME` 验证相同版本的 `initialize` / `initialized` 握手，返回核心兼容、完整审批响应能力和零模型用量。协议检查采用已安装的二进制。 [OpenAI 官方 App Server 文档](https://learn.chatgpt.com/docs/app-server)

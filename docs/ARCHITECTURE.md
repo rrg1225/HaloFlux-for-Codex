@@ -7,14 +7,14 @@ flowchart LR
   M["Electron 主进程与托盘"] <-->|"生命周期、脱敏状态"| B["Node utility process"]
   B <-->|"stdio JSON-RPC"| C["已安装 Codex App Server"]
   B <-->|"回环 SSE、操作 POST"| W["主窗口"]
-  B -->|"回环 SSE"| O["只读悬浮窗口"]
+  M -->|"固定字段 IPC、渲染预算"| O["只读悬浮窗口"]
   W --> R["原版 Canvas"]
   O --> R
 ```
 
 桌面主进程用单实例锁启动一个 utility process。该进程使用 `startBridge` 在操作系统分配的回环端口监听，监听成功后才传回地址。Chromium 使用内存分区和窗口级请求允许列表。回环凭据由主进程附加，操作继续通过既有 Origin、令牌、Schema 和审批检查。悬浮窗只能取得可视化资源与状态，主窗口的模式选择通过白名单 IPC 同步。 [安全审查](DESKTOP-SECURITY.md)
 
-主窗口关闭到托盘时停止画布帧调度，保留任务与审批上下文。悬浮窗隐藏即销毁，重开时恢复边界并接收同一桥接快照。退出检查先在 worker 阻止新轮次，再决定等待、取消退出或经用户确认中断。桥接用原有 EOF 路径释放 App Server。 [进程验收](DESKTOP-PROCESSES.md)
+主窗口进入托盘时停止画布帧调度，隐藏 15 秒后释放绘制缓冲区。主窗口保持 SSE 订阅，任务与审批继续更新。悬浮窗隐藏即销毁，重开时恢复边界并接收来自同一桥接的状态投影。渲染预算由 Electron 主进程按可见性、活动窗口和主窗帧采样计算。退出检查先在 worker 阻止新轮次，再决定等待、取消退出或经用户确认中断。桥接用原有 EOF 路径释放 App Server。 [进程验收](DESKTOP-PROCESSES.md)
 
 ## 原版与桥接边界
 

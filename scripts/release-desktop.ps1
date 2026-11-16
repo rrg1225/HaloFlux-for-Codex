@@ -8,7 +8,7 @@ Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 $project = Split-Path -Parent $PSScriptRoot
 $runtime = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'desktop-runtime.json') | ConvertFrom-Json
 $package = Get-Content -Raw -LiteralPath (Join-Path $project 'package.json') | ConvertFrom-Json
-if ($package.version -notmatch '^\d+\.\d+\.\d+-alpha\.\d+$') { throw 'Expected desktop alpha version.' }
+if ($package.version -notmatch '^\d+\.\d+\.\d+-(alpha|beta)\.\d+$') { throw 'Expected desktop prerelease version.' }
 $inputZip = (Get-Item -LiteralPath $ElectronArchive).FullName
 if ((Get-FileHash -LiteralPath $inputZip -Algorithm SHA256).Hash -ne $runtime.sha256) {
     throw "Expected the verified Electron archive $($runtime.archive)."

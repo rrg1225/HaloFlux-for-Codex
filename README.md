@@ -1,4 +1,4 @@
-# HaloFlux for Codex v0.4.0-alpha.1
+# HaloFlux for Codex v0.4.0-beta.1
 
 Original HALOFLUX by Ryder191 (RYDER CODE / Ms MAIKEBAIs CAT). [原始仓库](https://github.com/Ryder191/haloflux)
 
@@ -10,15 +10,15 @@ HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目
 
 ## Windows 快速开始
 
-**桌面 Alpha（Windows x64）**。核对 SHA-256 后完整解压桌面 ZIP，双击 `HaloFlux.exe`。随包提供 Electron、Chromium 和 Node。默认在模拟模式启动。桌面设置可选择关闭时退出或留在托盘，托盘菜单可打开窗口、切换信号来源和恢复悬浮窗点击。 [桌面使用说明与已知问题](docs/DESKTOP-WINDOWS.md)
+**桌面 Beta（Windows x64，未签名）**。核对 SHA-256 后完整解压桌面 ZIP，双击 `HaloFlux.exe`。随包提供 Electron、Chromium 和 Node。默认在模拟模式启动。桌面设置提供均衡、主窗优先、悬浮窗优先和省电四档渲染预算。托盘可恢复主窗、悬浮窗位置和鼠标交互。 [桌面使用说明](docs/DESKTOP-WINDOWS.md)
 
 **浏览器版**。完整解压浏览器 ZIP，安装 Node.js 22 或更新版本，再双击 `Start-HaloFlux.cmd`。启动器检查环境并打开默认浏览器。实时模式需要单独安装 Codex CLI 并登录。
 
 启动器中输入 `Q` 并回车即可关闭桥接。开发者可在项目目录运行 `npm.cmd start`，访问本地地址 `http://127.0.0.1:4637`，按 `Ctrl+C` 停止服务。自定义工作目录、端口和 CLI 路径见 [Windows 使用说明](docs/WINDOWS.md)。
 
-Codex CLI 0.162.0 通过本版 Schema 检查与隔离握手。普通 Windows 沙箱 Error 32 仍沿用上游阻塞记录。0.163.0 实机验证待授权，真实模型任务与真实审批本轮未验证。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
+Codex CLI 0.162.0 通过本版 Schema 检查与无模型握手。普通 Windows 沙箱 Error 32 为 **UPSTREAM_BLOCKED**。0.163.0 执行待授权，状态为 **BLOCKED_BY_APPROVAL**。真实模型任务与真实审批为 **NOT TESTED**。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
 
-浏览器与 Electron 分别测试。 [验收](docs/VERIFICATION.md) · [Electron 性能](docs/DESKTOP-PERFORMANCE.md) · [历史 Edge 对照](docs/PERFORMANCE.md)
+固定画质双窗性能门槛为 **FAILED**。最终匹配尺寸下，同时开启两窗时主窗与悬浮窗的中位帧率分别为 11.34 和 11.31 FPS。 [验收](docs/VERIFICATION.md) · [多窗口性能](docs/DESKTOP-PERFORMANCE.md) · [长时间稳定性](docs/DESKTOP-SOAK.md)
 
 ## 使用界面
 
@@ -53,7 +53,7 @@ npm.cmd run test:windows
 
 HaloFlux visualizes Codex task state with the original HALOFLUX Canvas. The local bridge streams status and counts to the browser. Open the task details or approval panel to inspect private content on demand. [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
-For the desktop Alpha, verify the Windows x64 desktop ZIP, extract it and double-click `HaloFlux.exe`. The desktop package includes its own runtime. Use Desktop Settings to change close behavior and the tray menu to open the optional halo, recover its pointer input or quit. [Desktop guide and known issues](docs/DESKTOP-WINDOWS.md)
+For the desktop Beta, verify the Windows x64 desktop ZIP, extract it and double-click `HaloFlux.exe`. The desktop package includes its own runtime. Desktop Settings controls close behavior and the rendering budget. Use the tray to open the halo, reset its position, restore pointer input or quit. [Desktop guide and known issues](docs/DESKTOP-WINDOWS.md)
 
 1. For the browser build, verify the ZIP against its SHA-256 file. Extract it to a writable Windows folder and install Node.js 22 or newer.
 2. Open `Start-HaloFlux.cmd` to start the bridge and launch your default browser. Type `Q` and press Enter in the launcher to stop it. From a terminal, `npm.cmd start` also serves the UI at `http://127.0.0.1:4637` and stops with Ctrl+C.

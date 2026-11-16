@@ -5,30 +5,25 @@ const labels = {
   idle: '待机', working: '正在运行', streaming: '生成消息', tool_running: '执行工具',
   approval_required: '等待审批', completed: '任务完成', failed: '任务失败', interrupted: '任务已中断',
 };
-let data;
+const activities = { command: '命令执行', file: '文件修改', tool: '工具调用', network: '网络访问' };
 let desktopState;
-let online = false;
 function render() {
   if (!desktopState) return;
-  const { mode, paused, preferences: prefs, clickThrough } = desktopState;
-  const signal = online ? data?.[mode] : undefined;
-  const nextState = signal?.state ?? 'idle';
+  const { mode, paused, visual, signal, online, fps, clickThrough } = desktopState;
   const label = !online ? '本地桥接未连接' :
-    mode === 'live' && !['connected', 'resume_failed'].includes(signal?.connection) ? 'Codex 未连接' : labels[nextState];
+    mode === 'live' && !signal.connected ? 'Codex 未连接' :
+      signal.state === 'tool_running' ? activities[signal.activeKind] ?? labels.tool_running : labels[signal.state];
   const title = (mode === 'live' ? '实时' : '模拟') + ' · ' + label + (clickThrough ? ' · 穿透' : '');
   if (status.textContent !== title) status.textContent = title;
-  const fps = desktopState.sharedDrawing && prefs.overlayAutoQuality ? Math.min(prefs.overlayFps, 20) : prefs.overlayFps;
   canvas.contentWindow?.postMessage({
-    type: 'haloflux-frame', paused, state: nextState, pulse: mode + '/' + (signal?.pulse ?? 0),
-    activity: signal?.activity, activeKind: signal?.activeKind,
-    settings: { haloX: 5, light: .8, beams: .62, particles: .55, color: prefs.theme, fps,
-      autoQuality: prefs.overlayAutoQuality, completionAnimation: prefs.completionAnimation },
+    type: 'haloflux-frame', paused, state: signal.state, pulse: mode + '/' + signal.pulse,
+    activity: signal.activity, activeKind: signal.activeKind,
+    settings: { haloX: 5, light: .8, beams: .62, particles: .55, color: visual.theme, fps, desktop: true,
+      qualityTarget: desktopState.lifecycle.application === 'MAIN_AND_OVERLAY_VISIBLE' ? 20 : fps,
+      autoQuality: visual.autoQuality, completionAnimation: visual.completionAnimation },
   }, location.origin);
 }
 canvas.addEventListener('load', render);
-const events = new EventSource('/api/events');
-events.onmessage = event => { data = JSON.parse(event.data); online = true; render(); };
-events.onerror = () => { online = false; render(); };
 desktop.subscribe(next => { desktopState = next; render(); });
 desktop.read().then(next => { if (!desktopState) { desktopState = next; render(); } }).catch(() => {});
 window.addEventListener('message', event => {

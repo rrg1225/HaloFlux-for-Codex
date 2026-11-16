@@ -12,10 +12,15 @@ const { app, BrowserWindow, powerMonitor, screen } = require('electron');
 
 const root = resolve(__dirname, '..');
 const output = resolve(process.env.HALOFLUX_DESKTOP_OUTPUT ?? join(root, 'output/desktop'));
-const profile = mkdtempSync(join(tmpdir(), 'haloflux-desktop-test-'));
+const dpi = process.argv.includes('--dpi');
+const dpiRestart = process.argv.includes('--dpi-restart');
+const profile = (dpi || dpiRestart) && process.env.HALOFLUX_TEST_PROFILE
+  ? resolve(process.env.HALOFLUX_TEST_PROFILE) : mkdtempSync(join(tmpdir(), 'haloflux-desktop-test-'));
 const realHandshake = process.argv.includes('--handshake');
 const nativeBalloon = process.argv.includes('--balloon');
-const report = { checks: [], frames: {}, pids: [], runtime: process.versions.electron };
+assert.ok([dpi, dpiRestart, realHandshake, nativeBalloon].filter(Boolean).length <= 1,
+  'Run each desktop test mode separately');
+const report = { started: new Date().toISOString(), checks: [], frames: {}, pids: [], runtime: process.versions.electron };
 const record = name => report.checks.push(name);
 const owned = new Set();
 app.setPath('userData', profile);
@@ -62,6 +67,11 @@ function collectMetrics() {
     workingSetByTypeMiB: byType,
   };
 }
+function appServerMetrics(pid) {
+  return JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-Process -Id ${pid} | Select-Object Id,CPU,WorkingSet64,PrivateMemorySize64 | ConvertTo-Json -Compress`],
+  { encoding: 'utf8', windowsHide: true, timeout: 10000 }));
+}
 async function sample(name, windows) {
   // Accumulate real frame submissions via the same performance stream as the UI.
   await delay(2300);
@@ -83,6 +93,94 @@ async function sample(name, windows) {
   assert.ok(samples.every(window => window.visible && window.values.length >= 1), 'No visible frame samples for ' + name);
 }
 
+async function verifyDpi(launch) {
+  const runtime = await launch();
+  const { main, backend } = runtime;
+  const { pid } = backend;
+  const file = join(profile, 'desktop-preferences.json');
+  const saved = () => JSON.parse(readFileSync(file, 'utf8')).overlayBounds;
+  const display = screen.getPrimaryDisplay();
+  report.display = { scaleFactor: display.scaleFactor, workArea: display.workArea };
+  report.geometry = [];
+  report.moves = [];
+  report.visibility = [];
+  owned.add(pid);
+  for (const event of ['show', 'hide', 'minimize', 'restore']) {
+    main.on(event, () => report.visibility.push({ event, at: new Date().toISOString() }));
+  }
+  try {
+    await until(async () => (await backend.request('observe')).streamCount === 1, 'one main SSE');
+    click(runtime, 'live');
+    assert.equal((await request(main, { action: 'connect' })).status, 200);
+    assert.equal((await request(main, { action: 'run', prompt: 'held' })).status, 200);
+    await invoke(main, 'preference("overlayAutoQuality", false)');
+    await invoke(main, 'overlay()');
+    if (dpiRestart) {
+      const previous = JSON.parse(readFileSync(join(output, 'dpi.json'), 'utf8'));
+      assert.ok(previous.passed);
+      assert.deepEqual(runtime.overlay.getBounds(), previous.geometry.at(-1).actual);
+      assert.deepEqual(saved(), previous.geometry.at(-1).requested);
+      record('native overlay geometry restored across process restart');
+    } else {
+      const win = runtime.overlay;
+      const before = win.getBounds();
+      win.setPosition(display.workArea.x + display.workArea.width - 540, display.workArea.y + 64);
+      assert.notDeepEqual(win.getPosition(), [before.x, before.y]);
+      assert.equal(await invoke(win, 'resizeOverlay(471, 383)'), true);
+      click(runtime, 'passthrough');
+      assert.equal((await invoke(win, 'read()')).clickThrough, true);
+      assert.equal(await invoke(win, 'resizeOverlay(500, 400)'), false);
+      click(runtime, 'passthrough');
+      assert.equal((await invoke(win, 'read()')).clickThrough, false);
+      await invoke(main, 'overlay()');
+      record('native move and resize, click-through and tray recovery');
+    }
+    let restored;
+    for (let index = 0; index < (dpiRestart ? 1 : 20); index++) {
+      if (!runtime.overlay) await invoke(main, 'overlay()');
+      const win = runtime.overlay;
+      const beforeDraw = win.getBounds();
+      win.on('move', () => report.moves.push({ cycle: index + 1, bounds: win.getBounds(), cursor: screen.getCursorScreenPoint() }));
+      assert.equal(BrowserWindow.getAllWindows().length, 2);
+      assert.equal(win.isAlwaysOnTop(), true, 'overlay is pinned after showing');
+      assert.equal((await invoke(win, 'read()')).lifecycle.application, 'MAIN_AND_OVERLAY_VISIBLE');
+      await until(() => execute(win, 'document.getElementById("status").textContent.includes("正在运行")'), 'overlay task');
+      await until(() => execute(win, `Boolean(document.getElementById('halo').contentDocument
+        ?.getElementById('stage')?.getContext('2d')?.getContextAttributes().alpha)`), 'transparent overlay draw');
+      const actual = win.getBounds();
+      const physical = screen.dipToScreenRect(win, actual);
+      const scale = screen.getDisplayMatching(actual).scaleFactor;
+      const surface = await execute(win, `(() => {
+        const page = document.getElementById('halo').contentWindow;
+        const stage = page.document.getElementById('stage');
+        return { dpr: page.devicePixelRatio, viewport: [page.innerWidth, page.innerHeight],
+          backing: [stage.width, stage.height], alpha: stage.getContext('2d').getContextAttributes().alpha };
+      })()`);
+      assert.equal(surface.dpr, scale);
+      assert.ok(surface.alpha && surface.backing.every(size => size > 0));
+      const requested = await until(() => {
+        try { const bounds = saved(); return bounds?.width === 471 && bounds?.height === 383 && bounds; }
+        catch { return false; }
+      }, 'persisted requested geometry');
+      report.moves.push({ cycle: index + 1, beforeDraw, afterDraw: actual });
+      const geometry = { requested, actual, physical, scale, surface };
+      restored ??= geometry;
+      assert.deepEqual(geometry, restored, 'DIP, physical bounds and backing store remain stable');
+      assert.equal((await backend.request('observe')).streamCount, 1);
+      assert.equal(runtime.backend.pid, pid);
+      report.geometry.push(geometry);
+      await invoke(main, 'overlay()');
+      assert.equal(BrowserWindow.getAllWindows().length, 1);
+      collectMetrics();
+    }
+    if (!dpiRestart) record('20 overlay reopen cycles with stable DPI bounds, active Mock state and one SSE');
+    assert.equal((await request(main, { action: 'interrupt' })).status, 200);
+  } finally {
+    await runtime.cleanup();
+    await until(() => !running(pid), 'DPI bridge exit');
+  }
+}
+
 async function run() {
   const { launchDesktop } = await import(pathToFileURL(join(root, 'desktop/main.mjs')).href);
   const errors = [];
@@ -98,6 +196,7 @@ async function run() {
     },
     ...options,
   });
+  if (dpi || dpiRestart) return verifyDpi(launch);
   const collision = createServer().listen(0, '127.0.0.1');
   await once(collision, 'listening');
   try {
@@ -124,6 +223,10 @@ async function run() {
     ['undefined', 'undefined', '', 'undefined', 'undefined']);
     assert.equal(await invoke(main, 'preference("cwd", "PRIVATE_PATH")'), false);
     assert.equal(await invoke(main, 'preference("opacity", 110)'), false);
+    assert.equal(await invoke(main, 'preference("budget", "unlimited")'), false);
+    assert.equal(await execute(main, `document.querySelector('iframe').contentWindow.fetch('/api/action', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"action":"connect"}'
+    }).then(() => true, () => false)`), false);
     assert.equal(await execute(main, 'fetch("https://example.com").then(() => true, () => false)'), false);
     await execute(main, 'window.open("https://example.com"); void 0');
     assert.equal(BrowserWindow.getAllWindows().length, 1);
@@ -139,6 +242,13 @@ async function run() {
       { encoding: 'utf8', windowsHide: true, timeout: 10000 }).trim().split(/\s+/).map(Number);
       assert.ok(codex.length === 1 && codex[0] > 0 && running(codex[0]), 'Expected one owned CLI process');
       owned.add(codex[0]);
+      const initial = appServerMetrics(codex[0]);
+      const start = performance.now();
+      await delay(2000);
+      const final = appServerMetrics(codex[0]);
+      report.appServer = { pid: final.Id, workingSetBytes: final.WorkingSet64, privateBytes: final.PrivateMemorySize64,
+        cpuSeconds: final.CPU - initial.CPU, intervalSeconds: (performance.now() - start) / 1000 };
+      report.electronDuringHandshake = collectMetrics();
       main.close();
       await until(() => !running(pid), 'handshake worker exit');
       await until(() => !running(codex[0]), 'owned App Server exit');
@@ -162,7 +272,10 @@ async function run() {
     const overlay = runtime.overlay;
     assert.ok(overlay.isVisible() && overlay.isAlwaysOnTop());
     assert.equal(await execute(overlay, 'fetch("/api/action", {method:"POST"}).then(() => true, () => false)'), false);
-    assert.equal(await invoke(overlay, 'mode("demo")'), false);
+    assert.equal(await execute(overlay, 'typeof haloDesktop.mode'), 'undefined');
+    assert.equal(await execute(overlay, 'fetch("/api/events").then(() => true, () => false)'), false);
+    assert.deepEqual(Object.keys((await invoke(overlay, 'read()')).signal).sort(),
+      ['activeKind', 'activity', 'connected', 'pulse', 'state']);
     await until(() => execute(overlay, 'document.getElementById("status").dataset.sample'), 'original overlay frame');
     assert.deepEqual(await execute(overlay, `(() => {
       const page = document.getElementById('halo').contentDocument;
@@ -185,6 +298,17 @@ async function run() {
     assert.equal(await invoke(overlay, 'resizeOverlay(500, 400)'), false);
     click(runtime, 'passthrough');
     assert.equal((await invoke(overlay, 'read()')).clickThrough, false);
+    click(runtime, 'passthrough');
+    click(runtime, 'reset-overlay');
+    assert.equal((await invoke(overlay, 'read()')).clickThrough, false);
+    assert.ok(Math.abs(overlay.getBounds().width - Math.min(420, screen.getPrimaryDisplay().workArea.width)) <= 2);
+    assert.equal((await invoke(main, 'read()')).lifecycle.application, 'MAIN_AND_OVERLAY_VISIBLE');
+    for (const [budget, expected] of [['main', [60, 20]], ['overlay', [40, 30]], ['power', [20, 20]]]) {
+      main.focus();
+      assert.equal(await invoke(main, `preference("budget", "${budget}")`), true);
+      assert.deepEqual([(await invoke(main, 'read()')).fps, (await invoke(overlay, 'read()')).fps], expected);
+    }
+    await invoke(main, 'preference("budget", "balanced")');
     await invoke(main, 'preference("alwaysOnTop", false)');
     assert.equal(overlay.isAlwaysOnTop(), false);
     await invoke(main, 'preference("alwaysOnTop", true)');
@@ -234,9 +358,12 @@ async function run() {
     assert.equal((await invoke(main, 'read()')).paused, false);
     record('suspend/resume handler simulation');
     const cycles = [];
+    let restoredOverlay;
     for (let index = 0; index < 12; index++) {
       await invoke(main, 'overlay()');
       assert.equal(BrowserWindow.getAllWindows().length, 2);
+      restoredOverlay ??= runtime.overlay.getBounds();
+      assert.deepEqual(runtime.overlay.getBounds(), restoredOverlay, 'overlay bounds remain stable');
       await invoke(main, 'overlay()');
       assert.equal(BrowserWindow.getAllWindows().length, 1);
       if (index % 4 === 3) { await delay(350); cycles.push(collectMetrics()); }
@@ -246,7 +373,7 @@ async function run() {
     await delay(5500);
     report.afterCyclesHidden = collectMetrics();
     click(runtime, 'open');
-    record('12 overlay create/destroy cycles');
+    record('12 overlay create/destroy cycles with stable DPI bounds');
 
     click(runtime, 'quit');
     await until(() => !main.isVisible(), 'continue in tray');
@@ -268,20 +395,49 @@ async function run() {
     await until(() => notices.some(body => body.includes('审批')), 'redacted approval notification');
     const { body: { approvals: [review] } } = await request(main, { action: 'context', review: true });
     assert.equal((await request(main, { ...review, action: 'decision', decision: 'decline' })).status, 200);
+    assert.equal((await request(main, { ...review, action: 'decision', decision: 'accept' })).status, 400);
     await until(() => notices.some(body => body.includes('完成')), 'redacted completion notification');
     assert.equal((await request(main, { action: 'run', prompt: 'failed' })).status, 200);
     await until(() => notices.some(body => body.includes('失败')), 'redacted failure notification');
+    assert.equal((await request(main, { action: 'run', prompt: 'approval' })).status, 200);
+    await until(async () => (await request(main, { action: 'context', review: true })).body.approvals?.length, 'fresh approval');
+    const { body: { approvals: [second] } } = await request(main, { action: 'context', review: true });
+    assert.equal((await request(main, { ...second, action: 'decision', decision: 'accept' })).status, 200);
+    assert.equal((await request(main, { ...second, action: 'decision', decision: 'accept' })).status, 400);
     assert.doesNotMatch(notices.join(' '), /PRIVATE_|fixture|token/i);
+    assert.ok(notices.every(body => body.startsWith('模拟 · ')));
     report.noticeCounts = notices.length;
-    record('redacted mock notification policy and explicit approval decline');
+    record('redacted mock notifications, approve and decline, and stale or duplicate ticket rejection');
 
+    assert.equal((await request(main, { action: 'run', prompt: 'approval' })).status, 200);
+    const pending = await until(async () => {
+      const { body } = await request(main, { action: 'context', review: true });
+      return body.approvals?.[0];
+    }, 'approval before renderer recovery');
+    await invoke(main, 'overlay()');
+    runtime.overlay.webContents.forcefullyCrashRenderer();
+    await until(() => !runtime.overlay, 'overlay crash cleanup');
+    assert.equal((await backend.request('inspect-exit', false)).blocked, true);
+    await invoke(main, 'overlay()');
+    click(runtime, 'live');
+    await until(() => execute(runtime.overlay, 'document.getElementById("status").textContent.includes("等待审批")'),
+      'overlay recovery shows the pending approval');
+    runtime.overlay.close();
     const crash = once(main.webContents, 'render-process-gone');
     main.webContents.forcefullyCrashRenderer();
     await crash;
     assert.ok(running(pid));
     click(runtime, 'open');
     await until(() => execute(main, '!!document.querySelector("#renderer")').catch(() => false), 'main renderer recovery');
-    record('renderer crash and tray recovery');
+    assert.equal((await backend.request('inspect-exit', false)).blocked, true);
+    await until(async () => (await backend.request('observe')).streamCount === 1, 'single SSE after recovery');
+    const { body: { approvals: recovered } } = await request(main, { action: 'context', review: true });
+    assert.equal(recovered.length, 1);
+    assert.ok(['threadId', 'turnId', 'requestId', 'ticket'].every(key => recovered[0][key] === pending[key]),
+      'recovery preserves the pending approval identity');
+    assert.equal((await request(main, { ...pending, action: 'decision', decision: 'accept' })).status, 200);
+    assert.equal((await request(main, { ...pending, action: 'decision', decision: 'accept' })).status, 400);
+    record('both renderers recover the same Mock turn and approval with one SSE and one decision');
 
     assert.equal((await request(main, { action: 'run', prompt: 'held' })).status, 200);
     choice = 2;
@@ -318,8 +474,10 @@ run().then(() => { report.passed = true; }, error => {
   console.error(error);
 }).finally(() => {
   collectMetrics();
+  report.finished = new Date().toISOString();
   report.pids = [...owned];
-  const filename = realHandshake ? 'handshake.json' : nativeBalloon ? 'notification.json' : 'desktop.json';
+  const filename = dpiRestart ? 'dpi-restart.json' : dpi ? 'dpi.json' :
+    realHandshake ? 'handshake.json' : nativeBalloon ? 'notification.json' : 'desktop.json';
   writeFileSync(join(output, filename), JSON.stringify(report, null, 2) + '\n');
   app.exit(report.passed ? 0 : 1);
 });

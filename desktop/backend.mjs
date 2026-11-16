@@ -5,7 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 export const visualPaths = [
   '/desktop-overlay', '/overlay.css', '/overlay.js', '/canvas-overlay',
-  '/renderer.js', '/renderer.css', '/audio/sw421k.mp3', '/api/events', '/favicon.ico',
+  '/renderer.js', '/renderer.css', '/favicon.ico',
 ];
 
 export async function startBackend({ cwd, port = 0, onSnapshot, onExit, fixture }) {

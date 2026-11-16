@@ -12,12 +12,14 @@ desktop/main.mjs
 desktop/notifications.mjs
 desktop/preferences.mjs
 desktop/preload.cjs
+desktop/render-budget.mjs
 desktop/window-security.mjs
 docs/ARCHITECTURE.md
 docs/DESKTOP-ADR.md
 docs/DESKTOP-PERFORMANCE.md
 docs/DESKTOP-PROCESSES.md
 docs/DESKTOP-SECURITY.md
+docs/DESKTOP-SOAK.md
 docs/DESKTOP-WINDOWS.md
 docs/DUAL-TAB.md
 docs/ORIGINALS.sha256
