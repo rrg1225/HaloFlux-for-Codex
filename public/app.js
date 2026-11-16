@@ -103,7 +103,7 @@ window.addEventListener('message', event => {
   $('performance').dataset.sample = JSON.stringify({ fps, p95, cap });
   text('performance', '绘制 ' + fps.toFixed(1) + ' FPS · 间隔 P95 ' + p95.toFixed(1) + ' ms · 上限 ' + cap);
   if (desktopState?.lifecycle.application === 'MAIN_AND_OVERLAY_VISIBLE' &&
-    desktopState.preferences.budget === 'balanced' && cap >= 30) {
+    desktopState.preferences.budget === 'balanced' && cap === desktopState.fps) {
     desktop.frameSample(fps, p95).catch(() => {});
   }
 });

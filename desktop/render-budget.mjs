@@ -1,4 +1,5 @@
-const rates = [20, 24, 30];
+const rates = [12, 16, 20];
+const balancedMainCap = 30;
 
 export function renderBudget() {
   let tier = 0;
@@ -13,7 +14,7 @@ export function renderBudget() {
       if (now - lastSample < 1750) return false;
       lastSample = now;
       const previous = tier;
-      const target = Math.min(cap, 42);
+      const target = Math.min(cap, balancedMainCap);
       if (fps < target * .91 || p95 > 1300 / target) {
         tier = Math.max(0, tier - 1);
         stable = 0;
@@ -27,9 +28,9 @@ export function renderBudget() {
       const { fps, overlayFps, budget } = preferences;
       if (budget === 'power') return { main: Math.min(fps, 20), overlay: Math.min(overlayFps, 20) };
       if (!dual) return { main: fps, overlay: overlayFps };
-      if (budget === 'overlay') return { main: Math.min(fps, mainFocused ? 40 : 20), overlay: overlayFps };
-      const limit = budget === 'main' ? 20 : rates[tier];
-      return { main: fps, overlay: Math.min(overlayFps, limit) };
+      if (budget === 'main') return { main: fps, overlay: Math.min(overlayFps, 8) };
+      if (budget === 'overlay') return { main: mainFocused ? Math.min(fps, 12) : 0, overlay: overlayFps };
+      return { main: Math.min(fps, balancedMainCap), overlay: Math.min(overlayFps, rates[tier]) };
     },
   };
 }

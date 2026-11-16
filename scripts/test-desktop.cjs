@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { createServer } = require('node:net');
-const { mkdirSync, mkdtempSync, writeFileSync, readFileSync } = require('node:fs');
+const { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -18,7 +18,14 @@ const profile = (dpi || dpiRestart) && process.env.HALOFLUX_TEST_PROFILE
   ? resolve(process.env.HALOFLUX_TEST_PROFILE) : mkdtempSync(join(tmpdir(), 'haloflux-desktop-test-'));
 const realHandshake = process.argv.includes('--handshake');
 const nativeBalloon = process.argv.includes('--balloon');
-assert.ok([dpi, dpiRestart, realHandshake, nativeBalloon].filter(Boolean).length <= 1,
+const priority = process.argv.includes('--priority');
+const realE2E = process.argv.includes('--real-e2e');
+if (realE2E && process.env.HALOFLUX_LIVE_TEST !== '1') {
+  console.error('REAL_E2E_NOT_TESTED: authorize real model and scratch-file approval use before enabling HALOFLUX_LIVE_TEST.');
+  app.exit(2);
+  return;
+}
+assert.ok([dpi, dpiRestart, realHandshake, nativeBalloon, priority, realE2E].filter(Boolean).length <= 1,
   'Run each desktop test mode separately');
 const report = { started: new Date().toISOString(), checks: [], frames: {}, pids: [], runtime: process.versions.electron };
 const record = name => report.checks.push(name);
@@ -44,6 +51,7 @@ function running(pid) {
 }
 const execute = (win, source) => win.webContents.executeJavaScript(source);
 const request = (win, body) => execute(win, `fetch('/api/action', {
+  signal: AbortSignal.timeout(8000),
   method: 'POST', headers: {'Content-Type': 'application/json'},
   body: ${JSON.stringify(JSON.stringify(body))}
 }).then(async response => ({status: response.status, body: await response.json()}))`);
@@ -181,15 +189,146 @@ async function verifyDpi(launch) {
   }
 }
 
+async function sharedState(runtime, state, timeout) {
+  const { main, overlay } = runtime;
+  await until(async () => (await invoke(overlay, 'read()')).signal.state === state &&
+    await execute(main, 'document.querySelector(".visual").dataset.state') === state, 'shared ' + state, timeout);
+}
+
+async function verifyPriority(runtime) {
+  const { main, overlay, backend } = runtime;
+  const { pid, origin } = backend;
+  const bounds = overlay.getBounds();
+  assert.equal((await request(main, { action: 'run', prompt: 'approval' })).status, 200);
+  await sharedState(runtime, 'approval_required');
+  const { body: { approvals: [pending] } } = await request(main, { action: 'context', review: true });
+  await invoke(main, 'preference("budget", "overlay")');
+  main.minimize();
+  await until(async () => (await invoke(main, 'read()')).paused && !(await invoke(overlay, 'read()')).paused,
+    'overlay-only paint after minimize');
+  assert.equal((await backend.request('inspect-exit', false)).blocked, true);
+  await sharedState(runtime, 'approval_required');
+  click(runtime, 'open');
+  await until(async () => main.isFocused() && !(await invoke(main, 'read()')).paused, 'paint resumes on restore');
+  await invoke(main, 'preference("budget", "balanced")');
+  await sharedState(runtime, 'approval_required');
+  assert.equal((await backend.request('observe')).streamCount, 1);
+  assert.deepEqual(overlay.getBounds(), bounds, 'switching priority preserves the existing window bounds');
+  assert.equal((await request(main, { ...pending, action: 'decision', decision: 'accept' })).status, 200);
+  assert.equal((await request(main, { ...pending, action: 'decision', decision: 'accept' })).status, 400);
+  await sharedState(runtime, 'idle', 10000);
+  assert.equal((await request(main, { action: 'run', prompt: 'approval' })).status, 200);
+  await sharedState(runtime, 'approval_required');
+  const { body: { approvals: [denied] } } = await request(main, { action: 'context', review: true });
+  assert.equal((await request(main, { ...denied, action: 'decision', decision: 'decline' })).status, 200);
+  assert.equal((await request(main, { ...denied, action: 'decision', decision: 'accept' })).status, 400);
+  await sharedState(runtime, 'idle', 10000);
+  const preferences = () => JSON.parse(readFileSync(join(profile, 'desktop-preferences.json'), 'utf8'));
+  const logical = await until(() => preferences().overlayBounds, 'persisted logical overlay bounds');
+  await invoke(overlay, 'hideOverlay()').catch(() => {});
+  await until(() => !runtime.overlay, 'overlay renderer destroyed on hide');
+  assert.equal((await invoke(main, 'read()')).fps, 60);
+  await invoke(main, 'overlay()');
+  // Compare two native creations. setBounds() from "reset" can round
+  // differently than the BrowserWindow constructor at fractional DPI.
+  const reopened = runtime.overlay.getBounds();
+  await invoke(main, 'overlay()');
+  await invoke(main, 'overlay()');
+  assert.deepEqual(runtime.overlay.getBounds(), reopened);
+  assert.ok(runtime.overlay.isAlwaysOnTop());
+  assert.equal(await invoke(main, 'preference("budget", "main")'), true);
+  assert.deepEqual(preferences().overlayBounds, logical);
+  report.geometry = { scale: screen.getDisplayMatching(reopened).scaleFactor, logical, afterReset: bounds, reopened };
+  assert.equal(backend.pid, pid);
+  assert.equal((await backend.request('observe')).streamCount, 1);
+  record('priority, minimize, restore and overlay reopen preserve the held Mock approval, geometry and single SSE');
+  click(runtime, 'quit');
+  await until(() => !running(pid), 'tray quit releases bridge');
+  await assert.rejects(fetch(origin, { signal: AbortSignal.timeout(3000) }));
+  record('tray quit released worker and loopback listener');
+}
+
+async function verifyRealE2E(runtime, workspace) {
+  const { main, backend } = runtime;
+  const { pid, origin } = backend;
+  const cli = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid} AND Name='codex.exe'" | Select-Object -ExpandProperty ProcessId`],
+    { encoding: 'utf8', windowsHide: true, timeout: 5000 }).trim();
+  assert.match(cli, /^\d+$/, 'expected exactly one owned Codex CLI');
+  owned.add(Number(cli));
+  await invoke(main, 'overlay()');
+  await invoke(main, 'preference("budget", "main")');
+  const api = async (action, args = {}, status = 200) => {
+    const response = await request(main, { action, ...args });
+    assert.equal(response.status, status, action);
+    return response.body;
+  };
+  const { threadId } = await api('new');
+  assert.ok(threadId);
+  const outcome = (predicate, timeout = 24000) => until(async () => {
+    const { task } = await api('details');
+    return task?.threadId === threadId && predicate(task) && task;
+  }, 'real turn outcome', timeout);
+  await api('run', { prompt: 'Reply with exactly HALOFLUX_E2E. Do not use tools or change files.' });
+  const reply = await outcome(task => task.outcome);
+  assert.ok(reply.outcome === 'completed' && reply.reply?.trim() === 'HALOFLUX_E2E');
+  for (const event of ['turn-started', 'turn-completed']) assert.ok(reply.timeline.some(row => row.event === event));
+  await sharedState(runtime, 'idle');
+  record('real thread, model response, timeline and shared return to idle');
+
+  let previousTurn = reply.turnId;
+  for (const decision of ['accept', 'decline']) {
+    const name = 'haloflux-' + decision + '.txt';
+    const file = join(workspace, name);
+    assert.ok(!existsSync(file));
+    await api('run', { prompt: 'Use apply_patch once in the current workspace to create ' + name +
+      ' with one line HALOFLUX_E2E. Use no other tools or fallback. After the result, reply briefly.' });
+    const pending = await until(async () => {
+      const { approvals } = await api('context', { review: true });
+      if (approvals.length) {
+        assert.equal(approvals.length, 1);
+        return approvals[0];
+      }
+      const { task } = await api('details');
+      assert.ok(!task?.outcome || task.turnId === previousTurn, 'turn ended without approval');
+    }, 'real file approval', 20000);
+    assert.notEqual(pending.turnId, previousTurn);
+    previousTurn = pending.turnId;
+    assert.ok(pending.threadId === threadId && pending.kind === 'file' && pending.decisions.includes(decision));
+    assert.equal(pending.files.length, 1);
+    const [change] = pending.files;
+    const expected = resolve(file).toLowerCase();
+    assert.ok(resolve(workspace, change.path).toLowerCase() === expected && change.type === 'add' &&
+      change.destination === null && /(?:^|\n)\+HALOFLUX_E2E\r?(?:\n|$)/.test(change.diff) && !existsSync(file),
+      'unexpected file-change preview');
+    const budget = decision === 'accept' ? 'overlay' : 'balanced';
+    await invoke(main, `preference("budget", "${budget}")`);
+    await sharedState(runtime, 'approval_required');
+    await api('decision', { ...pending, decision });
+    await api('decision', { ...pending, decision }, 400);
+    const task = await outcome(task => task.turnId === pending.turnId && task.outcome, 10000);
+    assert.ok(task.timeline.some(row => row.event === 'approval-result' && row.status === decision));
+    if (decision === 'accept') assert.ok(readFileSync(file, 'utf8').trimEnd() === 'HALOFLUX_E2E');
+    else assert.ok(!existsSync(file));
+    await sharedState(runtime, 'idle');
+    record('real file ' + decision + ', duplicate ticket rejection and shared idle');
+  }
+  click(runtime, 'quit');
+  await until(() => !running(pid) && !running(Number(cli)), 'real worker and CLI exit');
+  await assert.rejects(fetch(origin, { signal: AbortSignal.timeout(3000) }));
+  record('real tray quit released worker, CLI and loopback listener');
+}
+
 async function run() {
   const { launchDesktop } = await import(pathToFileURL(join(root, 'desktop/main.mjs')).href);
   const errors = [];
   const notices = [];
   let choice = 0;
   const exitDialogs = [];
+  const workspace = realE2E ? mkdtempSync(join(tmpdir(), 'haloflux-e2e-workspace-')) : profile;
   const launch = options => launchDesktop({
-    cwd: profile, showError: message => errors.push(message),
-    fixture: realHandshake ? undefined : pathToFileURL(join(root, 'test/fixtures/desktop-rpc.mjs')).href,
+    cwd: workspace, showError: message => errors.push(message),
+    fixture: realHandshake || realE2E ? undefined : pathToFileURL(join(root, 'test/fixtures/desktop-rpc.mjs')).href,
     displayNotice: nativeBalloon ? undefined : body => notices.push(body), askExit: async options => {
       exitDialogs.push(options.buttons.length);
       return { response: choice };
@@ -235,7 +374,8 @@ async function run() {
     click(runtime, 'live');
     await until(() => execute(main, 'document.getElementById("live-mode").getAttribute("aria-pressed") === "true"'), 'tray mode');
     assert.equal((await request(main, { action: 'connect' })).status, 200);
-    record(realHandshake ? 'installed CLI schema and no-model handshake' : 'mock connection and tray mode');
+    record(realHandshake || realE2E ? 'installed CLI schema and handshake' : 'mock connection and tray mode');
+    if (realE2E) return await verifyRealE2E(runtime, workspace);
     if (realHandshake) {
       const codex = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
         `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid} AND Name='codex.exe'" | Select-Object -ExpandProperty ProcessId`],
@@ -303,7 +443,7 @@ async function run() {
     assert.equal((await invoke(overlay, 'read()')).clickThrough, false);
     assert.ok(Math.abs(overlay.getBounds().width - Math.min(420, screen.getPrimaryDisplay().workArea.width)) <= 2);
     assert.equal((await invoke(main, 'read()')).lifecycle.application, 'MAIN_AND_OVERLAY_VISIBLE');
-    for (const [budget, expected] of [['main', [60, 20]], ['overlay', [40, 30]], ['power', [20, 20]]]) {
+    for (const [budget, expected] of [['main', [60, 8]], ['overlay', [12, 30]], ['power', [20, 20]]]) {
       main.focus();
       assert.equal(await invoke(main, `preference("budget", "${budget}")`), true);
       assert.deepEqual([(await invoke(main, 'read()')).fps, (await invoke(overlay, 'read()')).fps], expected);
@@ -316,6 +456,7 @@ async function run() {
     assert.ok(Math.abs(overlay.getOpacity() - .7) < .02);
     await invoke(main, 'preference("opacity", 85)');
     record('transparent Canvas pixels, read-only overlay, resize, opacity, pin and passthrough recovery');
+    if (priority) return await verifyPriority(runtime);
 
     const display = screen.getPrimaryDisplay();
     report.display = { size: display.size, workArea: display.workArea, scaleFactor: display.scaleFactor };
@@ -477,7 +618,8 @@ run().then(() => { report.passed = true; }, error => {
   report.finished = new Date().toISOString();
   report.pids = [...owned];
   const filename = dpiRestart ? 'dpi-restart.json' : dpi ? 'dpi.json' :
-    realHandshake ? 'handshake.json' : nativeBalloon ? 'notification.json' : 'desktop.json';
+    realHandshake ? 'handshake.json' : nativeBalloon ? 'notification.json' :
+      realE2E ? 'real-e2e.json' : priority ? 'priority.json' : 'desktop.json';
   writeFileSync(join(output, filename), JSON.stringify(report, null, 2) + '\n');
   app.exit(report.passed ? 0 : 1);
 });

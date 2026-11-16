@@ -18,6 +18,10 @@
 
 ## Windows 桌面 Beta
 
+`scripts/test-desktop.cjs --priority` 使用 Mock App Server 验证渲染预算、单条 SSE、原生窗口恢复、拒绝重复审批票据和托盘退出。`scripts/desktop-observe.cjs --priority` 使用三个固定画质的短采样验证优先级。设置 `HALOFLUX_DESKTOP_SOURCE` 可用同一脚本采样已解出的旧版本。先后运行两版，保持 Electron、尺寸、显示设置和任务夹具一致。
+
+桌面真实验收入口为 `scripts/test-desktop.cjs --real-e2e`。取得对真实模型和文件审批的明确授权后，使用已校验的 Electron、已登录的本机 Codex，给该测试进程设置 `HALOFLUX_LIVE_TEST=1` 并限制进程最长运行 120 秒。脚本使用独立临时工作区和测试窗口配置，验证真实消息、时间线、同状态展示、全新文件的批准和拒绝、票据单次消费、退出与端口释放。任何审批都先核对预览目标及内容。无授权的入口拒绝启动。本版结果为 **NOT TESTED**（`REAL_E2E_NOT_TESTED`）。
+
 用已校验并解压的 Electron 运行 `scripts/test-desktop.cjs`。默认用 Mock 轮次覆盖有头窗口、托盘、透明 Canvas、退出与性能。传入 `--handshake` 仅使用已安装的 CLI 做隔离的无模型握手。传入 `--balloon` 通过 Windows 托盘发送一个固定文案的 Mock 完成通知，并等待 Windows 的呈现事件。运行时可用 `HALOFLUX_DESKTOP_OUTPUT` 指定 JSON 和截图目录。
 
 传入 `--dpi` 可单独验证移动与缩放后的 20 次悬浮窗重开。为重启验收，先将 `HALOFLUX_TEST_PROFILE` 指向新建的空测试目录，设置 `HALOFLUX_DESKTOP_OUTPUT`，运行 `--dpi`。再用相同的测试目录与输出目录启动独立进程并传入 `--dpi-restart`。每个进程只使用一个模式。报告保存请求 DIP、原生读回 DIP、DPI 比例、DIP 到屏幕像素转换及 Canvas 实际后备尺寸。

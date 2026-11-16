@@ -1,4 +1,4 @@
-# HaloFlux for Codex v0.4.0-beta.1
+# HaloFlux for Codex v0.4.1-beta.1
 
 Original HALOFLUX by Ryder191 (RYDER CODE / Ms MAIKEBAIs CAT). [原始仓库](https://github.com/Ryder191/haloflux)
 
@@ -18,7 +18,7 @@ HaloFlux for Codex 是非官方、仅限非商业用途的 HaloFlux 衍生项目
 
 Codex CLI 0.162.0 通过本版 Schema 检查与无模型握手。普通 Windows 沙箱 Error 32 为 **UPSTREAM_BLOCKED**。0.163.0 执行待授权，状态为 **BLOCKED_BY_APPROVAL**。真实模型任务与真实审批为 **NOT TESTED**。 [Windows CLI 兼容性报告](docs/SANDBOX.md)
 
-固定画质双窗性能门槛为 **FAILED**。最终匹配尺寸下，同时开启两窗时主窗与悬浮窗的中位帧率分别为 11.34 和 11.31 FPS。 [验收](docs/VERIFICATION.md) · [多窗口性能](docs/DESKTOP-PERFORMANCE.md) · [长时间稳定性](docs/DESKTOP-SOAK.md)
+主窗优先保留主窗预算，悬浮窗以最高 8 FPS 动画持续显示状态。悬浮窗优先在主窗失焦时暂停其 Canvas。均衡档限制双窗负载并按主窗的帧间隔调整悬浮窗上限。匹配几何与画质的短测显示优先窗口绘制改善。两窗同时使用高预算时的 GPU 性能仍未解决。 [验收](docs/VERIFICATION.md) · [多窗口性能](docs/DESKTOP-PERFORMANCE.md)
 
 ## 使用界面
 
@@ -51,7 +51,7 @@ npm.cmd run test:windows
 
 ## English guide
 
-HaloFlux visualizes Codex task state with the original HALOFLUX Canvas. The local bridge streams status and counts to the browser. Open the task details or approval panel to inspect private content on demand. [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md)
+HaloFlux visualizes Codex task state with the original HALOFLUX Canvas. The local bridge streams status and counts to the browser. Open the task details or approval panel to inspect private content on demand. With both desktop windows open, Main Priority caps the overlay at 8 FPS and Overlay Priority suspends the main Canvas when it loses focus. State, timeline and approvals continue updating. [Architecture](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
 For the desktop Beta, verify the Windows x64 desktop ZIP, extract it and double-click `HaloFlux.exe`. The desktop package includes its own runtime. Desktop Settings controls close behavior and the rendering budget. Use the tray to open the halo, reset its position, restore pointer input or quit. [Desktop guide and known issues](docs/DESKTOP-WINDOWS.md)
 

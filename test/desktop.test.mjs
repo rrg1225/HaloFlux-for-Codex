@@ -8,16 +8,18 @@ test('balanced budget raises the overlay only after sustained main-window headro
   const budget = renderBudget();
   const limits = () => budget.limits(defaults, true, true);
   const healthy = { fps: 50, p95: 24 };
-  assert.deepEqual(limits(), { main: 60, overlay: 20 });
+  assert.deepEqual(limits(), { main: 30, overlay: 12 });
   assert.equal(budget.measure(healthy, 60, 0), false);
   assert.equal(budget.measure(healthy, 60, 1), false);
   assert.equal(budget.measure(healthy, 60, 2000), false);
   assert.equal(budget.measure(healthy, 60, 4000), true);
-  assert.deepEqual(limits(), { main: 60, overlay: 24 });
-  assert.equal(budget.measure({ fps: 29, p95: 60 }, 60, 6000), true);
-  assert.deepEqual(limits(), { main: 60, overlay: 20 });
+  assert.deepEqual(limits(), { main: 30, overlay: 16 });
+  assert.equal(budget.measure({ fps: 19, p95: 60 }, 60, 6000), true);
+  assert.deepEqual(limits(), { main: 30, overlay: 12 });
   assert.deepEqual(budget.limits(defaults, false, false), { main: 60, overlay: 30 });
-  assert.deepEqual(budget.limits({ ...defaults, budget: 'overlay' }, true, false), { main: 20, overlay: 30 });
+  assert.deepEqual(budget.limits({ ...defaults, budget: 'overlay' }, true, false), { main: 0, overlay: 30 });
+  assert.deepEqual(budget.limits({ ...defaults, budget: 'overlay' }, true, true), { main: 12, overlay: 30 });
+  assert.deepEqual(budget.limits({ ...defaults, budget: 'main' }, true, true), { main: 60, overlay: 8 });
 });
 
 test('notification dedupe and cooldown work independently per category', () => {

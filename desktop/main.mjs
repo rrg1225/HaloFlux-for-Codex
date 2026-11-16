@@ -115,7 +115,7 @@ export async function launchDesktop({ cwd = app.getPath('documents'), port = 0, 
       };
     }
     return {
-      mode, paused, lifecycle, fps: caps.main, settingsRequest,
+      mode, paused: paused || caps.main === 0, lifecycle, fps: caps.main, settingsRequest,
       preferences: Object.fromEntries(Object.keys(defaults).map(key => [key, preferences[key]])),
     };
   }

@@ -6,7 +6,7 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { setTimeout: delay } = require('node:timers/promises');
-const { app, screen, powerMonitor } = require('electron');
+const { app, BrowserWindow, screen, powerMonitor } = require('electron');
 
 const root = resolve(__dirname, '..');
 const source = resolve(process.env.HALOFLUX_DESKTOP_SOURCE ?? root);
@@ -17,6 +17,7 @@ const quick = process.argv.includes('--quick');
 const dualOnly = process.argv.includes('--dual-fixed');
 const budgetsOnly = process.argv.includes('--budgets');
 const matchedOnly = process.argv.includes('--matched');
+const priorityOnly = process.argv.includes('--priority');
 const repetitions = Number(process.env.HALOFLUX_MATRIX_REPETITIONS ?? 5);
 const duration = Number(process.env.HALOFLUX_SOAK_SECONDS ?? 1800);
 const report = { runtime: process.versions, started: new Date().toISOString(), samples: [], gpuMemory: 'UNKNOWN' };
@@ -140,7 +141,8 @@ async function observe(runtime, name, warmup, ms, round) {
   await Promise.all(windows.map(([, win]) => canvas(win, 'measureDesktop.start()')));
   await delay(ms);
   const data = await Promise.all(windows.map(async ([role, win]) => [
-    role, { ...bounds(win), ...frames(await canvas(win, 'measureDesktop.stop()')) },
+    role, { ...bounds(win), visible: win.isVisible(), focused: win.isFocused(), minimized: win.isMinimized(),
+      ...frames(await canvas(win, 'measureDesktop.stop()')) },
   ]));
   const processes = processMetrics(runtime);
   osMemory(processes);
@@ -280,6 +282,38 @@ async function matrix(runtime) {
   }
 }
 
+async function comparePriorities(runtime) {
+  const { main, overlay } = runtime;
+  const initial = overlay.getBounds();
+  await preference(main, 'autoQuality', false);
+  await preference(main, 'overlayAutoQuality', false);
+  const foreground = new BrowserWindow({ width: 280, height: 120, show: false, alwaysOnTop: true });
+  try {
+    for (const budget of ['balanced', 'main', 'overlay']) {
+      await preference(main, 'budget', budget);
+      if (budget === 'overlay') foreground.show();
+      else main.focus();
+      await delay(600);
+      assert.equal(main.isFocused(), budget !== 'overlay', 'expected native focus before sampling');
+      if (budget === 'overlay') assert.ok(foreground.isFocused());
+      const controls = await invoke(main, 'read()');
+      const visual = await invoke(overlay, 'read()');
+      assert.equal(controls.lifecycle.application, 'MAIN_AND_OVERLAY_VISIBLE');
+      assert.equal(visual.signal.state, await execute(main, 'document.querySelector(".visual").dataset.state'));
+      const sample = await observe(runtime, budget, 700, 4200, 1);
+      assert.equal(sample.windows.main.focused, budget !== 'overlay', 'expected focus throughout sampling');
+      assert.ok(sample.windows.overlay.n > 10, 'visible overlay continues drawing');
+      assert.equal(sample.windows.main.n === 0, controls.paused, 'main paint follows its pause state');
+      assert.deepEqual(overlay.getBounds(), initial, 'priority switch keeps geometry');
+      assert.ok(overlay.isAlwaysOnTop(), 'priority switch keeps overlay pinned');
+      sample.caps = { main: controls.fps, overlay: visual.fps };
+      sample.bridge = await runtime.backend.request('observe');
+      assert.equal(sample.bridge.streamCount, 1, 'one control SSE');
+      write();
+    }
+  } finally { foreground.destroy(); }
+}
+
 async function run() {
   assert.ok(Number.isInteger(repetitions) && repetitions > 0);
   assert.ok(Number.isInteger(duration) && duration > 0);
@@ -310,7 +344,8 @@ async function run() {
     main.focus();
     await delay(1300);
     assert.match(await execute(overlay, 'document.getElementById("status").textContent'), /正在运行/);
-    if (soak) await runSoak(runtime);
+    if (priorityOnly) await comparePriorities(runtime);
+    else if (soak) await runSoak(runtime);
     else await matrix(runtime);
     assert.equal(await action(main, { action: 'interrupt' }), 200);
     assert.deepEqual(errors, []);

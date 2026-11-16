@@ -212,10 +212,6 @@
     if (!s || !Object.hasOwn(profiles, signal)) return;
     const nextState = signal === 'completed' && s.completionAnimation === false ? 'idle' : signal;
     const nextPaused = event.data.paused === true;
-    if (paused !== nextPaused) {
-      paused = nextPaused;
-      syncVisibility();
-    }
     if (state !== nextState) {
       if (state === 'idle' || nextState === 'idle') resetSamples();
       entered = performance.now();
@@ -226,7 +222,7 @@
       spin: range(s.spin, 0.15, 1.5), light: range(s.light, 0.2, 1.5),
       beams: range(s.beams, .1, 1.7),
       particles: range(s.particles, 0.15, 1.3), rhythm: range(s.rhythm, 0.25, 1.5),
-      color: s.color, fps: [20, 24, 30, 40, 60].includes(s.fps) ? s.fps : 60, desktop: s.desktop === true,
+      color: s.color, fps: [8, 12, 16, 20, 24, 30, 40, 60].includes(s.fps) ? s.fps : 60, desktop: s.desktop === true,
       qualityTarget: s.desktop ? range(s.qualityTarget, 20, 60, 60) : undefined,
       zoom: range(s.zoom, .55, 2), haloX: range(s.haloX, -45, 45, 0), haloY: range(s.haloY, -45, 45, 0),
       composition: s.composition === 'crop' ? 'crop' : 'fit', autoQuality: s.autoQuality === true, low: s.low === true,
@@ -245,6 +241,9 @@
     kick ||= pulse !== null && nextPulse !== pulse;
     if (kick && activity === 'file') fileUntil = performance.now() + 550;
     pulse = nextPulse;
-    if (settings.desktop && started) window.haloFluxScheduleFrame();
+    if (paused !== nextPaused) {
+      paused = nextPaused;
+      syncVisibility();
+    } else if (settings.desktop && started) window.haloFluxScheduleFrame();
   });
 })();

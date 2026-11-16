@@ -1,4 +1,33 @@
-# HaloFlux for Codex v0.4.0-beta.1 验收
+# HaloFlux for Codex v0.4.1-beta.1 验收
+
+2026-11-16（UTC+8），基于本地 `v0.4.0-beta.1` 的 `2600172b95aca76f26b147e69d33e0babe451105`。Windows x64、150% 缩放、Electron 45.2.3。测试采用短采样及针对性回归。记录位于工作区 `output/desktop/v041/`。
+
+| 项目 | 结果 | 证据 |
+| --- | --- | --- |
+| 原生窗口、Canvas、预算 | VERIFIED | 两版各采样三种优先级。主窗优先主窗 26.76 FPS，次要悬浮窗 8.00 FPS。悬浮窗优先的失焦主窗 0 FPS，悬浮窗 30.01 FPS，两窗可见。均衡 23.60 / 12.00 FPS。 [测法和对照](DESKTOP-PERFORMANCE.md) |
+| 任务、审批与恢复 | MOCK VERIFIED | 两窗保持同一待审批状态，最小化与恢复期间仍持有待审轮次。批准和拒绝后重复票据均被拒。一条主窗 SSE，悬浮窗只用 IPC。关闭悬浮窗销毁 renderer，重新打开仍置顶。 |
+| 分数 DPI | VERIFIED | 切换优先级时原生边界不变，两次重开尺寸一致，保存的逻辑宽高保持 420 × 350 DIP。在 150% 缩放下，托盘复位与重新创建的 Windows 读回分别为 420 × 351 与 422 × 354 DIP。 |
+| 源码模式安全与退出 | VERIFIED / MOCK VERIFIED | 顶层凭据、Canvas 操作拦截、悬浮只读、外部导航拒绝、托盘退出、进程和端口释放。Node 24.13.0 上 26 项通过，106 个源清单条目及 11 个原版文件哈希通过。 |
+| 最终桌面 ZIP 托盘退出 | PACKAGED_TRAY_EXIT = VERIFIED（人工原生操作） · Gate F = PASS | 用户在 Windows 通知区通过 HaloFlux 托盘菜单执行「退出应用」。PowerShell 前后快照确认所属进程退出、监听端口释放，独立进程仍在运行。 |
+| 当前 Codex CLI | VERIFIED | 已安装 0.162.0 的 Schema 和无模型握手通过，原生桌面握手退出后所属 CLI、桥接和端口释放。 |
+| Windows 沙箱 Error 32 | UPSTREAM_BLOCKED | 引用普通 Windows 沙箱的历史执行记录。 [兼容报告](SANDBOX.md) |
+| 候选 Codex CLI 0.163.0 实机测试 | BLOCKED_BY_APPROVAL | 下载、执行及隔离对照待授权。 [兼容报告](SANDBOX.md) |
+| 真实 Codex E2E | NOT TESTED | 有授权门控的真实桌面测试入口。无授权路径已核验，模型调用与文件审批均未运行，状态为 `REAL_E2E_NOT_TESTED`。Gate C 的真实任务条件仍待确认。 |
+| 固定画质双窗性能目标 | FAILED | 沿用历史固定双窗性能门槛结果。本版短测比较了渲染策略，同画质、同渲染预算的性能复测未运行。 |
+
+## v0.4.1-beta.1 桌面 ZIP 托盘验收
+
+2026-11-16（UTC+8），用户从最终 Windows 桌面候选 ZIP 启动 HaloFlux，在 Windows 通知区右键 HaloFlux 托盘图标并选择「退出应用」。用户提供的 PowerShell 退出前后进程和端口快照显示，退出前有 9 个属于本次启动的相关进程。退出后 `survivingProcesses = []`、`remainingListeners = []`、`missingIndependentProcesses = []`。Bridge PID `30792` 和 Codex PID `15128` 均已退出，监听端口 `127.0.0.1:51047` 已释放。人工原生验收结果为 `PACKAGED_TRAY_EXIT = VERIFIED`，`Gate F = PASS`。
+
+两个 ZIP 及各自的 `.sha256` 文件从 `output/desktop/v041/build-a/` 原样复制到 `dist/`。两个 ZIP 的 SHA-256 均与 `build-b/` 的独立构建及解包验收候选一致。逐文件比对覆盖桌面包 65 个源清单条目和浏览器包 106 个源清单条目，唯一差异是随包的 `docs/VERIFICATION.md` 为构建时快照，最终人工验收以仓库中的本页为准。HaloFlux 许可证和 Required Notice 随两包分发，桌面包同时包含 Electron 及 Chromium 组件的许可证文件。
+
+### 原生托盘自动化记录
+
+上轮 `packaged-desktop-retry.log` 记录 Windows 已为解包的 `HaloFlux.exe` 登记托盘图标。脚本向 Electron 通知窗口发送模拟消息后，等待「退出应用」超时。该记录只确认图标登记和定位超时。
+
+此前原生交互脚本首次在切换实时模式时遇到 UI Automation InvokePattern 不受支持。一次复验改用鼠标点击，成功完成 CLI 0.162.0 的无模型握手。App Server 进程检查使用了符号链接路径做精确匹配，而应用在启动 CLI 前会解析真实路径。进程匹配未通过，脚本在右键托盘之前终止。两个运行记录位于 `output/desktop/v041/tray-gate-native/desktop.json` 和 `output/desktop/v041/tray-gate-native-retry/desktop.json`，用时分别为 12.89 和 11.33 秒。失败后由测试执行进程清理，自动化记录维持当时的 `PACKAGED_TRAY_EXIT_UNVERIFIED`。这些失败保留为测试工具限制。
+
+## v0.4.0-beta.1 历史验收
 
 交付复验于 2026-11-11（UTC+8）在 Windows 11 25H2 x64 上进行。Electron 45.2.3、Chromium 156.0.8078.80、随包 Node 24.22.2。基线是 `feature/desktop-v040-beta1` 分支起点 `6e17909`，与本地 `v0.4.0-alpha.1` 一致。
 
