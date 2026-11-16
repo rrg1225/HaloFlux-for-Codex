@@ -1,9 +1,9 @@
 # Contributing to HaloFlux for Codex
 
-Use Node.js 22 or 24. The bridge has no runtime dependencies to install. Run `npm test`, `npm run check:source` and, on Windows, `npm run test:windows` before proposing changes. Use the documented Edge runner for browser changes. [Test requirements](docs/TESTING.md)
+Use Node.js 22 or 24. The project declares zero npm dependencies. Run `npm.cmd test` and `npm.cmd run check:source` on Windows before proposing changes. Run `npm.cmd run test:windows` for changes to the launcher or browser packaging, and use the documented Edge runner for browser changes. [Test requirements](docs/TESTING.md)
 
-Keep the upstream files identified by `docs/ORIGINALS.sha256` intact. Change the Codex integration in `src/`, `public/` or the launcher. State which tests used fixtures and which used an installed CLI. Keep raw traces, session transcripts, account data and local paths out of commits and issue reports.
+Keep the upstream files identified by `docs/ORIGINALS.sha256` intact. State which tests used fixtures and which used an installed CLI. Before staging, review your diff for credentials, session data and personal paths, and use a commit email address you intend to make public. Keep build archives, installed runtimes, raw traces and logs local.
 
-Git starts with the imported `v0.3.2-beta.1` baseline. Create local tags in the `vMAJOR.MINOR.PATCH[-prerelease.N]` form at verified release commits. To inspect or test the baseline in isolation, use `git worktree add --detach ../haloflux-v032 v0.3.2-beta.1`. `CHANGELOG.md` documents earlier releases from their existing records. Package from the corresponding tag using `scripts/release-windows.ps1`.
+Git starts with the imported `v0.3.2-beta.1` baseline. Earlier entries in the changelog use existing release records. For packaging changes, follow the Windows build documentation and verify the local output. [Changelog](CHANGELOG.md) · [Desktop build](docs/DESKTOP-WINDOWS.md) · [Browser build](docs/WINDOWS.md)
 
 Contributions are distributed with the upstream license and attribution. [License](LICENSE) · [Required notices](NOTICE.md) · [Security reporting](SECURITY.md)

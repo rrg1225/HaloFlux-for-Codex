@@ -1,5 +1,7 @@
 # HaloFlux for Codex 架构
 
+浏览器版从 `src/server.mjs` 启动本机 Node.js 桥接，默认监听 `127.0.0.1:4637`。桌面版由 `desktop/entry.mjs` 启动 Electron，用 utility process 运行同一桥接。两种入口共用主界面、事件状态、任务控制和审批逻辑。桌面版还管理托盘及只读悬浮窗。 [浏览器运行](WINDOWS.md) · [桌面构建](DESKTOP-WINDOWS.md)
+
 ## Windows 桌面
 
 ```mermaid
@@ -25,7 +27,7 @@ flowchart LR
 | `wallpaper/` | Wallpaper Engine 入口、调参属性、预览和壁纸音轨。 |
 | `LICENSE`、`preview.png`、`audio/` | 原始许可证、预览和 CC0 音轨。 |
 
-[原始资产清单](ORIGINALS.sha256)记录 v0.1.0 工作区升级前的哈希。11 个文件同时与上游提交 `016bef651c4f911f08039ba159d36a6f246ff5d2` 逐字节比对。原版独立入口、调参和壁纸用法保留在 README 原作者章节。
+[原始资产清单](ORIGINALS.sha256)记录 v0.1.0 工作区升级前的哈希。11 个文件同时与上游提交 `016bef651c4f911f08039ba159d36a6f246ff5d2` 逐字节比对。Codex 界面嵌入原版画布和音轨，桌面与浏览器的打包清单也保留这些素材。原版独立演示、调参和壁纸用法见 Ryder191 的说明。 [原版 HALOFLUX 文档](https://github.com/Ryder191/haloflux/blob/016bef651c4f911f08039ba159d36a6f246ff5d2/README.md)
 
 ```mermaid
 flowchart LR
@@ -55,4 +57,4 @@ flowchart LR
 
 使用 `codex-cli 0.162.0` 生成的 Schema 核对请求与响应。应用支持由 HaloFlux 独立启动的 stdio App Server。该版本 CLI 也提供 daemon/proxy 与带认证的 WebSocket transport。跨客户端共享需要显式配置同一个服务、认证和线程订阅。本版本只提供本地 stdio 连接以及官方线程历史恢复。 [Codex App Server 官方文档](https://learn.chatgpt.com/docs/app-server)
 
-CLI 选择由启动进程解析。默认按绝对 PATH 目录查找原生程序。Windows 下识别 npm shim 旁的官方平台包布局，通过 stdio 直接运行原生文件。进程级 `CODEX_BIN` 可显式选择已信任的绝对路径。实时连接使用该文件生成的 Schema 核对核心方法、事件及安全字段，再验证握手。缺少核心能力时拒绝实时操作，缺少审批响应格式时关闭相关操作。 [Windows CLI 兼容性](SANDBOX.md) · [桌面化决策](DESKTOP-ADR.md)
+CLI 选择由启动进程解析。默认按绝对 PATH 目录查找原生程序。Windows 下识别 npm shim 旁的官方平台包布局，通过 stdio 直接运行原生文件。进程级 `CODEX_BIN` 可显式选择已信任的绝对路径。实时连接使用该文件生成的 Schema 核对核心方法、事件及安全字段，再验证握手。缺少核心能力时拒绝实时操作，缺少审批响应格式时关闭相关操作。登录和线程历史由本机 Codex CLI 管理。 [Windows CLI 兼容性](SANDBOX.md) · [桌面化决策](DESKTOP-ADR.md)

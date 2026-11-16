@@ -2,6 +2,7 @@ CHANGELOG.md
 LICENSE
 NOTICE.md
 README.md
+README.zh-CN.md
 SECURITY.md
 audio/sw421k.mp3
 desktop/backend.mjs

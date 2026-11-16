@@ -3,6 +3,7 @@ CONTRIBUTING.md
 LICENSE
 NOTICE.md
 README.md
+README.zh-CN.md
 SECURITY.md
 Start-HaloFlux.cmd
 audio/sw421k.mp3
